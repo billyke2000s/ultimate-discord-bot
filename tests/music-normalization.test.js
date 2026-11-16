@@ -17,7 +17,13 @@ after(() => {
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
-function interaction({ guildId = 'test', userId = 'owner', ownerId = 'owner', state = 'on', queue = null } = {}) {
+function interaction({
+  guildId = 'test',
+  userId = 'owner',
+  ownerId = 'owner',
+  state = 'on',
+  queue = null,
+} = {}) {
   let reply;
   return {
     guildId,
