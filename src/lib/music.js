@@ -595,10 +595,10 @@ class GuildQueue {
   }
 
   async setNormalization(enabled) {
-    // An explicit null clears the plugin filters when switched off. Global volume is unchanged.
+    // An empty plugin-filter map clears normalization when switched off. Global volume is unchanged.
     // Apply to the live player now; the filter also carries over to subsequent tracks.
     await this.player.setFilters({
-      pluginFilters: enabled ? { normalization: { ...NORMALIZATION_FILTER } } : null,
+      pluginFilters: enabled ? { normalization: { ...NORMALIZATION_FILTER } } : {},
     });
     this.normalizationEnabled = enabled;
     this.refreshPanel();
