@@ -143,6 +143,7 @@ People who haven't verified only see ✅・verify. Members see everything except
 | `/setup restyle` | Server owner and `BOT_ADMIN_IDS`. Renames channels to the `emoji・name` style |
 | `/setup rebuild` | Server owner and `BOT_ADMIN_IDS`. ⚠️ **Wipes and rebuilds the server.** Locked after its first use |
 | `/update` | The actual server owner only. Checks for and installs a new bot release ([details](#update-from-discord)) |
+| `/musicsettings normalization on\|off` | The actual server owner only. Smooths loudness across songs. Off by default. |
 
 ---
 
