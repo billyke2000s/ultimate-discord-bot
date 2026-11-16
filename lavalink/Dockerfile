@@ -1,6 +1,6 @@
 # Compile the lightweight normalizer separately from the running Lavalink image.
 # The runtime still uses the same pinned Lavalink version as before.
-FROM gradle:8.14-jdk21 AS loudness-build
+FROM gradle:8.14-jdk17 AS loudness-build
 WORKDIR /plugin
 COPY normalizer/ ./
 RUN gradle --no-daemon --console=plain build
