@@ -291,11 +291,11 @@ const musicSettingsCommand = {
     .addSubcommand((s) =>
       s
         .setName('normalization')
-        .setDescription('Limit loud song peaks so music sits more comfortably under conversation')
+        .setDescription('Even out perceived loudness between quiet and loud songs')
         .addStringOption((o) =>
           o
             .setName('state')
-            .setDescription('Enable or disable peak normalization (off by default)')
+            .setDescription('Enable or disable loudness leveling (off by default)')
             .setRequired(true)
             .addChoices({ name: 'On', value: 'on' }, { name: 'Off', value: 'off' }),
         ),
@@ -318,7 +318,7 @@ const musicSettingsCommand = {
         console.error('[music] unable to change normalization:', err.message);
         return i.reply(
           eph(
-            'Could not apply normalization. Check the Lavalink logs and reinstall the optional LavaDSPX plugin. No setting was changed.',
+            'Could not apply normalization. Check the Lavalink logs and reinstall the loudness plugin. No setting was changed.',
           ),
         );
       }
@@ -327,8 +327,8 @@ const musicSettingsCommand = {
     return i.reply(
       eph(
         enabled
-          ? 'Music peak normalization is **on** for this server. Loud peaks are limited; it does not detect who is speaking.'
-          : 'Music peak normalization is **off** for this server. Playback uses its original audio dynamics.',
+          ? 'Music loudness normalization is **on** for this server. Quiet and loud songs are automatically levelled toward a common volume; no voice detection is used.'
+          : 'Music loudness normalization is **off** for this server. Songs play at their original relative loudness.',
       ),
     );
   },
