@@ -37,8 +37,9 @@ test('normalization is off by default, and only Discord guild owner can change i
   let calls = 0;
   const queue = {
     normalizationEnabled: false,
-    setNormalization: async () => {
+    setNormalization: async (enabled) => {
       calls++;
+      queue.normalizationEnabled = enabled;
     },
   };
   const admin = interaction({ guildId: 'owner-check', userId: 'admin', queue });
