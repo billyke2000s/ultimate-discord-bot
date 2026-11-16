@@ -61,7 +61,7 @@ test('normalization is off by default, and only Discord guild owner can change i
   assert.equal(getSettings('owner-check').music.normalization, false);
 });
 
-test('active queue receives peak filter immediately, and off removes it', async () => {
+test('active queue receives loudness leveler immediately, and off removes it', async () => {
   const calls = [];
   const queue = {
     player: { setFilters: async (filters) => calls.push(filters) },
@@ -71,7 +71,7 @@ test('active queue receives peak filter immediately, and off removes it', async 
   await GuildQueue.prototype.setNormalization.call(queue, true);
   assert.equal(queue.normalizationEnabled, true);
   assert.deepEqual(calls[0], {
-    pluginFilters: { normalization: { maxAmplitude: 0.45, adaptive: true } },
+    pluginFilters: { loudness: { enabled: true } },
   });
   await GuildQueue.prototype.setNormalization.call(queue, false);
   assert.equal(queue.normalizationEnabled, false);
