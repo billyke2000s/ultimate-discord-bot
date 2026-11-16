@@ -18,8 +18,8 @@ const PANEL_REFRESH_MS = 5_000; // how often the panel's time + progress bar upd
 const VOL_MIN = 10,
   VOL_MAX = 100;
 const BRAND_COLOR = 0x5865f2;
-// LavaDSPX adaptive peak limiter, only sent to Lavalink when the server owner opts in.
-const NORMALIZATION_FILTER = Object.freeze({ maxAmplitude: 0.45, adaptive: true });
+// Optional real-time K-weighted loudness leveller. No voice receive or ducking.
+const NORMALIZATION_FILTER = Object.freeze({ enabled: true });
 
 // Staff can skip or stop without a vote. Staff = Moderate Members permission (Staff/Admin roles), the owner, or a bot admin.
 function isStaff(member) {
@@ -595,10 +595,10 @@ class GuildQueue {
   }
 
   async setNormalization(enabled) {
-    // An empty plugin-filter map clears normalization when switched off. Global volume is unchanged.
+    // An empty plugin-filter map clears loudness leveling when switched off. Global volume is unchanged.
     // Apply to the live player now; the filter also carries over to subsequent tracks.
     await this.player.setFilters({
-      pluginFilters: enabled ? { normalization: { ...NORMALIZATION_FILTER } } : {},
+      pluginFilters: enabled ? { loudness: { ...NORMALIZATION_FILTER } } : {},
     });
     this.normalizationEnabled = enabled;
     this.refreshPanel();
@@ -1134,7 +1134,7 @@ class MusicManager {
           await q.setNormalization(true);
         } catch (err) {
           console.error(`[music] normalization could not be enabled in ${guild.id}:`, err.message);
-          // Keep music functional if Lavalink's optional DSP plugin is unavailable.
+          // Keep music functional if Lavalink's optional loudness plugin is unavailable.
         }
       }
       return q;
