@@ -379,6 +379,13 @@ else
   grep -q "^FROM ${DENO_IMAGE}" "$INSTALL_DIR/yt-cipher/Dockerfile" || die "Couldn't pin yt-cipher's build image."
 fi
 write_env   # save which boxes are used
+# Lavalink's own image includes the opt-in loudness-leveling plugin. Build it
+# from the versioned local sources; don't replace the pinned patched YouTube JAR.
+echo "  Building Lavalink with the opt-in loudness leveler..."
+docker compose build lavalink >"$TMP/lavalink-build.log" 2>&1 || {
+  tail -30 "$TMP/lavalink-build.log"
+  die "Lavalink loudness plugin build failed (output above)."
+}
 if [ ${#BUILD[@]} -gt 0 ]; then
   echo "  Building: ${BUILD[*]} (can take several minutes on small servers)..."
   docker compose build "${BUILD[@]}" >"$TMP/build.log" 2>&1 || { tail -30 "$TMP/build.log"; die "Build failed (output above)."; }
