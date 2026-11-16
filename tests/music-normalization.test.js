@@ -24,7 +24,12 @@ function interaction({ guildId = 'test', userId = 'owner', ownerId = 'owner', st
     guild: { ownerId },
     user: { id: userId },
     options: { getString: (key) => (key === 'state' ? state : null) },
-    client: { music: { get: () => queue } },
+    client: {
+      music: {
+        get: () => queue,
+        shoukaku: { getIdealNode: () => ({ info: { plugins: [{ name: 'obskyra-loudness' }] } }) },
+      },
+    },
     reply: async (value) => {
       reply = value;
     },
@@ -90,6 +95,14 @@ test('Lavalink filter errors do not save a setting or pretend the change succeed
   assert.equal(getSettings('apply-failure').music.normalization, false);
   assert.match(i.response().content, /Could not apply normalization/);
   assert.equal(i.response().flags, MessageFlags.Ephemeral);
+});
+
+test('missing loudness plugin cannot silently enable the setting', async () => {
+  const i = interaction({ guildId: 'no-plugin', queue: null });
+  i.client.music.shoukaku.getIdealNode = () => ({ info: { plugins: [] } });
+  await command.execute(i);
+  assert.equal(getSettings('no-plugin').music.normalization, false);
+  assert.match(i.response().content, /not loaded/);
 });
 
 test('disabled by default after restart-compatible settings merge; command is a required on/off choice', () => {
