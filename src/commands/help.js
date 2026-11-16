@@ -48,7 +48,7 @@ const help = {
       }
       if (interaction.user.id === interaction.guild.ownerId)
         admin +=
-          '\nServer owner only: `/update` checks versions and requests the latest bot release; `/update check-only:true` only checks.';
+          '\nServer owner only: `/update` checks versions and requests the latest bot release; `/update check-only:true` only checks; `/musicsettings normalization on|off` limits loud music peaks (off by default).';
       fields.push({ name: '⚙️ Admin', value: admin });
     }
     await interaction.reply({
