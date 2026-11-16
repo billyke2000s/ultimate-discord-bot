@@ -282,6 +282,56 @@ async function openLyrics(i) {
   liveLyrics.set(id, stop);
 }
 
+// Optional peak limiting. Even bot admins and server administrators cannot change it:
+ // only Discord's actual guild owner may enable or disable the setting.
+const musicSettingsCommand = {
+  data: new SlashCommandBuilder()
+    .setName('musicsettings')
+    .setDescription('Owner-only settings for the music player')
+    .addSubcommand((s) =>
+      s
+        .setName('normalization')
+        .setDescription('Limit loud song peaks so music sits more comfortably under conversation')
+        .addStringOption((o) =>
+          o
+            .setName('state')
+            .setDescription('Enable or disable peak normalization (off by default)')
+            .setRequired(true)
+            .addChoices({ name: 'On', value: 'on' }, { name: 'Off', value: 'off' }),
+        ),
+    ),
+  async execute(i) {
+    // Do not infer ownership from Administrator, BOT_ADMIN_IDS or the cosmetic Owner role.
+    if (!i.guild || i.user.id !== i.guild.ownerId)
+      return i.reply(eph('Only the actual server owner can change music normalization.'));
+
+    const enabled = i.options.getString('state', true) === 'on';
+    const { getSettings, updateSettings } = require('../lib/db');
+    const wasEnabled = getSettings(i.guildId).music?.normalization === true;
+    const q = i.client.music.get(i.guildId);
+
+    // Retry applying when a saved enabled setting did not take because Lavalink was missing the DSP plugin.
+    if (q && q.normalizationEnabled !== enabled) {
+      try {
+        await q.setNormalization(enabled);
+      } catch (err) {
+        console.error('[music] unable to change normalization:', err.message);
+        return i.reply(
+          eph('Could not apply normalization. Check the Lavalink logs and reinstall the optional LavaDSPX plugin. No setting was changed.'),
+        );
+      }
+    }
+    if (wasEnabled !== enabled) updateSettings(i.guildId, { music: { normalization: enabled } });
+    return i.reply(
+      eph(
+        enabled
+          ? 'Music peak normalization is **on** for this server. Loud peaks are limited; it does not detect who is speaking.'
+          : 'Music peak normalization is **off** for this server. Playback uses its original audio dynamics.',
+      ),
+    );
+  },
+};
+
 const lyricsCommand = {
   data: new SlashCommandBuilder()
     .setName('lyrics')
@@ -460,7 +510,7 @@ const components = {
 };
 
 module.exports = {
-  commands: [play, skip, stop, queue, nowplaying, lyricsCommand],
+  commands: [play, skip, stop, queue, nowplaying, lyricsCommand, musicSettingsCommand],
   components,
   prefixComponents: { 'music:queuepage:': queuePage },
   queueEmbed,
