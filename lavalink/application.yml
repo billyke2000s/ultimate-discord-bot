@@ -1,5 +1,6 @@
 # Lavalink v4 config. Secrets are NOT stored here: ${...} values come from .env (via docker-compose.yml).
 # Port 2333 is not published to the internet. Keep it that way.
+# LavaDSPX 0.0.5 is downloaded by Lavalink from JitPack on startup; its filter stays off by default.
 server:
   port: 2333
   address: 0.0.0.0
@@ -10,7 +11,9 @@ lavalink:
   # The YouTube plugin (patched TV client) is put in ./lavalink/plugins by install.sh (downloaded +
   # checksum-checked there), so Lavalink never downloads anything itself.
   # Spotify links don't need anything here: the bot reads them itself (src/lib/spotify.js).
-  plugins: []
+  plugins:
+    - dependency: com.github.Devoxin:LavaDSPX-Plugin:0.0.5
+      repository: https://jitpack.io
   server:
     password: "${LAVALINK_PASSWORD}"
     sources:
