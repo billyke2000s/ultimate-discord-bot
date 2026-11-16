@@ -7,7 +7,7 @@ from pathlib import Path
 spec = importlib.util.spec_from_file_location('update', Path(__file__).parents[1] / 'deployment/update.py')
 update = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(update)
-IMAGE = 'ghcr.io/billyke2000s/discord@sha256:' + 'a' * 64
+IMAGE = 'ghcr.io/billyke2000s/ultimate-discord-bot@sha256:' + 'a' * 64
 
 
 class UpdateTests(unittest.TestCase):
