@@ -9,7 +9,7 @@ server:
 
 lavalink:
   # The YouTube plugin (patched TV client) is put in ./lavalink/plugins by install.sh (downloaded +
-  # checksum-checked there), so Lavalink never downloads anything itself.
+  # checksum-checked there). The separate pinned LavaDSPX dependency is downloaded by Lavalink from JitPack.
   # Spotify links don't need anything here: the bot reads them itself (src/lib/spotify.js).
   plugins:
     - dependency: com.github.Devoxin:LavaDSPX-Plugin:0.0.5
