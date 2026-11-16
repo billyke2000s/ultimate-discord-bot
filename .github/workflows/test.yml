@@ -17,5 +17,7 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm test
+      - name: Build Lavalink loudness plugin image
+        run: docker build --progress=plain -f lavalink/Dockerfile lavalink
       - run: python3 -m unittest discover -s tests -p 'test_*.py'
       - run: bash scripts/build-installer.sh && bash -n dist/install.sh

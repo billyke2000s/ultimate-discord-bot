@@ -11,7 +11,10 @@ x-logging: &logging
 
 services:
   lavalink:
-    image: ghcr.io/lavalink-devs/lavalink:4.2.2-alpine   # pinned: a tested version, not whatever is newest
+    image: server-bot-lavalink-loudness:local
+    build:
+      context: ./lavalink
+      dockerfile: Dockerfile # pinned 4.2.2 + real-time loudness plugin
     container_name: lavalink
     restart: unless-stopped
     logging: *logging
@@ -26,7 +29,9 @@ services:
       - CIPHER_TOKEN=${CIPHER_TOKEN:-}
     volumes:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
-      - ./lavalink/plugins:/opt/Lavalink/plugins   # patched YouTube plugin (see install.sh)
+      # Mount only the existing patched YouTube plugin, not the whole directory: the
+      # image also bundles our loudness-leveling plugin in /opt/Lavalink/plugins.
+      - ./lavalink/plugins/youtube-plugin-1.18.2-tvfix.jar:/opt/Lavalink/plugins/youtube-plugin-1.18.2-tvfix.jar:ro
     depends_on:
       - yt-cipher
     networks: [botnet]

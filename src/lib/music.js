@@ -18,6 +18,8 @@ const PANEL_REFRESH_MS = 5_000; // how often the panel's time + progress bar upd
 const VOL_MIN = 10,
   VOL_MAX = 100;
 const BRAND_COLOR = 0x5865f2;
+// Optional real-time K-weighted loudness leveller. No voice receive or ducking.
+const NORMALIZATION_FILTER = Object.freeze({ enabled: true });
 
 // Staff can skip or stop without a vote. Staff = Moderate Members permission (Staff/Admin roles), the owner, or a bot admin.
 function isStaff(member) {
@@ -189,6 +191,7 @@ class GuildQueue {
     this.preparing = new WeakMap();
     this.prefetching = false;
     this.volume = Number(process.env.DEFAULT_VOLUME || 60);
+    this.normalizationEnabled = false;
     this.votes = { skip: new Set(), stop: new Set(), previous: new Set(), shuffle: new Set() };
     this.history = [];
     this.playedCurrent = false;
@@ -412,7 +415,7 @@ class GuildQueue {
       )
       .addFields(
         { name: 'Requested by', value: `<@${t.requester}>`, inline: true },
-        { name: 'Volume', value: `${this.volume}%`, inline: true },
+        { name: 'Volume', value: `${this.volume}%${this.normalizationEnabled ? ' · Normalized' : ''}`, inline: true },
         { name: 'In queue', value: String(this.tracks.length), inline: true },
         { name: 'Up next', value: next },
       )
@@ -589,6 +592,16 @@ class GuildQueue {
   async setVolume(v) {
     this.volume = Math.min(VOL_MAX, Math.max(VOL_MIN, v));
     await this.player.setGlobalVolume(this.volume).catch(() => {});
+  }
+
+  async setNormalization(enabled) {
+    // An empty plugin-filter map clears loudness leveling when switched off. Global volume is unchanged.
+    // Apply to the live player now; the filter also carries over to subsequent tracks.
+    await this.player.setFilters({
+      pluginFilters: enabled ? { loudness: { ...NORMALIZATION_FILTER } } : {},
+    });
+    this.normalizationEnabled = enabled;
+    this.refreshPanel();
   }
 
   async start() {
@@ -886,6 +899,8 @@ class MusicManager {
     this.creating = new Map(); // guildId -> promise, so two quick /plays don't join twice
     this.playRequests = new Map();
     this.searchPrefix = process.env.SEARCH_PREFIX || 'ytsearch';
+    // Lazy DB access keeps standalone queue tests free of a database dependency.
+    this.getMusicSettings = (guildId) => require('./db').getSettings(guildId).music;
     // LYRICS=off in .env turns lyrics off entirely (no requests to LRCLIB).
     this.findLyrics = process.env.LYRICS === 'off' ? null : (track) => lyrics.lookup(track);
     this.nodeOptions = {
@@ -1114,6 +1129,14 @@ class MusicManager {
       q.fallbackChannel = textChannel;
       this.queues.set(guild.id, q);
       await player.setGlobalVolume(q.volume).catch(() => {});
+      if (this.getMusicSettings?.(guild.id)?.normalization === true) {
+        try {
+          await q.setNormalization(true);
+        } catch (err) {
+          console.error(`[music] normalization could not be enabled in ${guild.id}:`, err.message);
+          // Keep music functional if Lavalink's optional loudness plugin is unavailable.
+        }
+      }
       return q;
     })().finally(() => this.creating.delete(guild.id));
     this.creating.set(guild.id, p);

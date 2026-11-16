@@ -1,5 +1,7 @@
 # Lavalink v4 config. Secrets are NOT stored here: ${...} values come from .env (via docker-compose.yml).
 # Port 2333 is not published to the internet. Keep it that way.
+# The custom obskyra-loudness filter is bundled in the pinned runtime image.
+# It only processes audio when the actual server owner opts in.
 server:
   port: 2333
   address: 0.0.0.0
@@ -7,8 +9,8 @@ server:
     enabled: false
 
 lavalink:
-  # The YouTube plugin (patched TV client) is put in ./lavalink/plugins by install.sh (downloaded +
-  # checksum-checked there), so Lavalink never downloads anything itself.
+  # Both bundled plugins live in /opt/Lavalink/plugins. Only the patched
+  # YouTube plugin is mounted from the host; our loudness filter is in the image.
   # Spotify links don't need anything here: the bot reads them itself (src/lib/spotify.js).
   plugins: []
   server:

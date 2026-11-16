@@ -282,6 +282,66 @@ async function openLyrics(i) {
   liveLyrics.set(id, stop);
 }
 
+// Optional perceived-loudness leveling. Even bot admins and server administrators cannot change it:
+// only Discord's actual guild owner may enable or disable the setting.
+const musicSettingsCommand = {
+  data: new SlashCommandBuilder()
+    .setName('musicsettings')
+    .setDescription('Owner-only settings for the music player')
+    .addSubcommand((s) =>
+      s
+        .setName('normalization')
+        .setDescription('Even out perceived loudness between quiet and loud songs')
+        .addStringOption((o) =>
+          o
+            .setName('state')
+            .setDescription('Enable or disable loudness leveling (off by default)')
+            .setRequired(true)
+            .addChoices({ name: 'On', value: 'on' }, { name: 'Off', value: 'off' }),
+        ),
+    ),
+  async execute(i) {
+    // Do not infer ownership from Administrator, BOT_ADMIN_IDS or the cosmetic Owner role.
+    if (!i.guild || i.user.id !== i.guild.ownerId)
+      return i.reply(eph('Only the actual server owner can change music normalization.'));
+
+    const enabled = i.options.getString('state', true) === 'on';
+    const { getSettings, updateSettings } = require('../lib/db');
+    const wasEnabled = getSettings(i.guildId).music?.normalization === true;
+    // Never pretend that an unknown Lavalink node can provide loudness leveling.
+    const node = i.client.music.shoukaku?.getIdealNode?.();
+    if (enabled && !node?.info?.plugins?.some((p) => p.name === 'obskyra-loudness'))
+      return i.reply(
+        eph(
+          'Loudness normalization is unavailable: Lavalink is disconnected or the loudness plugin is not loaded. Run the latest install.sh to update Lavalink. No setting was changed.',
+        ),
+      );
+    const q = i.client.music.get(i.guildId);
+
+    // Retry applying when a saved enabled setting did not take because Lavalink was missing the loudness plugin.
+    if (q && q.normalizationEnabled !== enabled) {
+      try {
+        await q.setNormalization(enabled);
+      } catch (err) {
+        console.error('[music] unable to change normalization:', err.message);
+        return i.reply(
+          eph(
+            'Could not apply normalization. Check the Lavalink logs and reinstall the loudness plugin. No setting was changed.',
+          ),
+        );
+      }
+    }
+    if (wasEnabled !== enabled) updateSettings(i.guildId, { music: { normalization: enabled } });
+    return i.reply(
+      eph(
+        enabled
+          ? 'Music loudness normalization is **on** for this server. Quiet and loud songs are automatically levelled toward a common volume; no voice detection is used.'
+          : 'Music loudness normalization is **off** for this server. Songs play at their original relative loudness.',
+      ),
+    );
+  },
+};
+
 const lyricsCommand = {
   data: new SlashCommandBuilder()
     .setName('lyrics')
@@ -460,7 +520,7 @@ const components = {
 };
 
 module.exports = {
-  commands: [play, skip, stop, queue, nowplaying, lyricsCommand],
+  commands: [play, skip, stop, queue, nowplaying, lyricsCommand, musicSettingsCommand],
   components,
   prefixComponents: { 'music:queuepage:': queuePage },
   queueEmbed,

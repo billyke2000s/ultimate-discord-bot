@@ -100,6 +100,9 @@ const DEFAULTS = {
     stackRewards: true, // keep lower reward roles (false = only the highest)
     ignoredChannels: [], // no XP in these channels
   },
+  music: {
+    normalization: false, // owner-only, adaptive peak limiting; opt in with /musicsettings
+  },
   commandsGuide: {
     channel: null, // where the public command list is posted (null = a channel named bot-commands, 'off' = none)
     messageId: null,

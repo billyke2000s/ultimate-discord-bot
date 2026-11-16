@@ -115,6 +115,7 @@ People who haven't verified only see ✅・verify. Members see everything except
 | `/status` | Is the music working, or is it just me? A quick private check |
 | `/rank [user]` · `/leaderboard` | Your level and XP, and the most active members |
 | `/lyrics` | Lyrics of the song playing now, private, following along (also the 📝 button on the music panel) |
+| `/musicsettings normalization on\|off` | **Server owner only**. Enable or disable adaptive music peak normalization; off by default. |
 | `/birthday set` · `/birthday show` | Save or see your own birthday (private reply) |
 | `/mywarnings` | See your own warnings and the reason for each (private reply; says staff or automod, not which moderator) |
 | `/vc panel` · `lock` · `unlock` · `limit` · `rename` · `kick` · `transfer` | Control your own join-to-create channel (the panel in its chat does the same with buttons) |
@@ -142,6 +143,7 @@ People who haven't verified only see ✅・verify. Members see everything except
 | `/setup restyle` | Server owner and `BOT_ADMIN_IDS`. Renames channels to the `emoji・name` style |
 | `/setup rebuild` | Server owner and `BOT_ADMIN_IDS`. ⚠️ **Wipes and rebuilds the server.** Locked after its first use |
 | `/update` | The actual server owner only. Checks for and installs a new bot release ([details](#update-from-discord)) |
+| `/musicsettings normalization on\|off` | The actual server owner only. Smooths loudness across songs. Off by default. |
 
 ---
 
@@ -157,6 +159,8 @@ People who haven't verified only see ✅・verify. Members see everything except
 - **Spotify:** the bot reads the public Spotify page and plays each song from YouTube. **Spotify only shows the first 100 songs of a playlist**, and since February 2026 its official API doesn't list other people's playlists, so the bot can't get past 100. It tells you when this happens. For bigger playlists, copy the playlist to YouTube Music (free tools such as TuneMyMusic or Soundiiz do this) and `/play` the YouTube Music link, which loads up to 2,000 songs. Private playlists don't work, and now and then a different recording is picked; the panel shows which YouTube video is playing so you can spot it.
 - **YouTube:** uses the throwaway account's login, a patched YouTube client and the `yt-cipher` helper.
 - Volume is set by `DEFAULT_VOLUME` in `.env`.
+- **Optional music loudness normalization:** the actual Discord server owner can run `/musicsettings normalization on` or `/musicsettings normalization off`. It defaults to **off**, is saved separately for each server, survives restarts and takes effect immediately on the playing song (and future songs). A custom Lavalink filter measures K-weighted audio loudness and adjusts gain both upward and downward toward approximately **−18 LUFS**. It smooths volume changes and protects against clipping. It is **not microphone-aware ducking**, and because it works live without pre-analysing each full song, very short intros and highly dynamic recordings can still vary. The owner can still adjust `DEFAULT_VOLUME` if overall music playback is too loud.
+- **Install requirement:** Lavalink must run the custom image built from `lavalink/Dockerfile`, which bundles the `lavalink/normalizer` Java plugin. On existing VPS installations, rerun the current `install.sh` to build the image and restart Lavalink; automatic **bot-only** updates do not update Lavalink. A missing plugin prevents the feature from working, without affecting normal music playback.
 - **Lyrics:** when a song has timed lyrics, the panel shows the line being sung (it updates every 5 seconds, so it can lag a little behind the singing). 📝 Lyrics or `/lyrics` opens a private view of about 15 lines with the current one in bold, following the song (and the next songs) for up to 14 minutes. Lyrics come from [LRCLIB](https://lrclib.net), a free community database: most well-known songs are there, but messy YouTube titles sometimes don't match, and then you get a web search link instead. Lyrics belong to their writers, which is why the full text is only ever shown privately. To turn lyrics off completely, add `LYRICS=off` to `.env` and restart.
 
 More detail: [playlist behaviour](docs/PLAYLIST_STARTUP.md).
