@@ -20,6 +20,12 @@ repositories {
     maven("https://maven.lavalink.dev/releases")
 }
 
+// Lavalink's Gradle plugin declares its API as compileOnly. Tests exercise
+// the DSP directly, so reuse those same classes on the test classpath.
+configurations.named("testImplementation") {
+    extendsFrom(configurations.getByName("compileOnly"))
+}
+
 dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
