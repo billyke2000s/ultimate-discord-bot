@@ -283,7 +283,7 @@ async function openLyrics(i) {
 }
 
 // Optional peak limiting. Even bot admins and server administrators cannot change it:
- // only Discord's actual guild owner may enable or disable the setting.
+// only Discord's actual guild owner may enable or disable the setting.
 const musicSettingsCommand = {
   data: new SlashCommandBuilder()
     .setName('musicsettings')
@@ -317,7 +317,9 @@ const musicSettingsCommand = {
       } catch (err) {
         console.error('[music] unable to change normalization:', err.message);
         return i.reply(
-          eph('Could not apply normalization. Check the Lavalink logs and reinstall the optional LavaDSPX plugin. No setting was changed.'),
+          eph(
+            'Could not apply normalization. Check the Lavalink logs and reinstall the optional LavaDSPX plugin. No setting was changed.',
+          ),
         );
       }
     }
