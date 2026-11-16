@@ -7,11 +7,11 @@ const bridge = require('../src/lib/update-bridge');
 const command = require('../src/commands/update').commands[0];
 test('release checks accept only the repository-compatible manifest and fixed asset location', async (t) => {
   const manifest = {
-    repository: 'billyke2000s/discord',
+    repository: 'billyke2000s/ultimate-discord-bot',
     tag: 'v-new',
     deployment: 1,
     commit: 'a'.repeat(40),
-    image: 'ghcr.io/billyke2000s/discord@sha256:' + 'b'.repeat(64),
+    image: 'ghcr.io/billyke2000s/ultimate-discord-bot@sha256:' + 'b'.repeat(64),
   };
   t.mock.method(
     globalThis,
@@ -25,7 +25,7 @@ test('release checks accept only the repository-compatible manifest and fixed as
                 assets: [
                   {
                     name: 'update.json',
-                    browser_download_url: 'https://github.com/billyke2000s/discord/releases/download/v-new/update.json',
+                    browser_download_url: `https://github.com/${manifest.repository}/releases/download/v-new/update.json`,
                   },
                 ],
               }

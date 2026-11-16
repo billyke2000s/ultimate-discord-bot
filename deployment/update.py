@@ -12,8 +12,8 @@ import time
 import urllib.request
 from pathlib import Path
 
-REPO = 'billyke2000s/discord'
-IMAGE = re.compile(r'ghcr\.io/billyke2000s/discord@sha256:[0-9a-f]{64}')
+REPO = 'billyke2000s/ultimate-discord-bot'
+IMAGE = re.compile(r'ghcr\.io/billyke2000s/ultimate-discord-bot@sha256:[0-9a-f]{64}')
 # While music plays, an update waits for the gap between two songs: the bot sees this file (through its
 # read-only status mount), saves the queue when the current song ends and leaves voice, and the update
 # goes in once no music session is left. After WAIT_MAX it goes in anyway; the bot then resumes the
