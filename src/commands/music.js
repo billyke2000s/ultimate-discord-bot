@@ -308,6 +308,10 @@ const musicSettingsCommand = {
     const enabled = i.options.getString('state', true) === 'on';
     const { getSettings, updateSettings } = require('../lib/db');
     const wasEnabled = getSettings(i.guildId).music?.normalization === true;
+    // Never pretend that an unknown Lavalink node can provide loudness leveling.
+    const node = i.client.music.shoukaku?.getIdealNode?.();
+    if (enabled && !node?.info?.plugins?.some((p) => p.name === 'obskyra-loudness'))
+      return i.reply(eph('Loudness normalization is unavailable: Lavalink is disconnected or the loudness plugin is not loaded. Run the latest install.sh to update Lavalink. No setting was changed.'));
     const q = i.client.music.get(i.guildId);
 
     // Retry applying when a saved enabled setting did not take because Lavalink was missing the DSP plugin.
