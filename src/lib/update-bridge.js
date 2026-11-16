@@ -3,7 +3,7 @@ const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 const requests = () => process.env.UPDATE_REQUEST_DIR || '/app/update-requests';
 const statuses = () => process.env.UPDATE_STATUS_DIR || '/app/update-status';
-const REPO = 'billyke2000s/discord';
+const REPO = 'billyke2000s/ultimate-discord-bot';
 let requesting = false,
   lastRequest = 0;
 async function readJson(file) {
@@ -55,7 +55,7 @@ async function latestRelease() {
     manifest.tag !== release.tag_name ||
     manifest.deployment !== 1 ||
     !/^[a-f0-9]{40}$/.test(manifest.commit) ||
-    !/^ghcr\.io\/billyke2000s\/discord@sha256:[a-f0-9]{64}$/.test(manifest.image)
+    !/^ghcr\.io\/billyke2000s\/ultimate-discord-bot@sha256:[a-f0-9]{64}$/.test(manifest.image)
   )
     throw Error('This release needs the manual installer.');
   return { version: manifest.tag, commit: manifest.commit };
