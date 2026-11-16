@@ -282,7 +282,7 @@ async function openLyrics(i) {
   liveLyrics.set(id, stop);
 }
 
-// Optional peak limiting. Even bot admins and server administrators cannot change it:
+// Optional perceived-loudness leveling. Even bot admins and server administrators cannot change it:
 // only Discord's actual guild owner may enable or disable the setting.
 const musicSettingsCommand = {
   data: new SlashCommandBuilder()
@@ -311,10 +311,14 @@ const musicSettingsCommand = {
     // Never pretend that an unknown Lavalink node can provide loudness leveling.
     const node = i.client.music.shoukaku?.getIdealNode?.();
     if (enabled && !node?.info?.plugins?.some((p) => p.name === 'obskyra-loudness'))
-      return i.reply(eph('Loudness normalization is unavailable: Lavalink is disconnected or the loudness plugin is not loaded. Run the latest install.sh to update Lavalink. No setting was changed.'));
+      return i.reply(
+        eph(
+          'Loudness normalization is unavailable: Lavalink is disconnected or the loudness plugin is not loaded. Run the latest install.sh to update Lavalink. No setting was changed.',
+        ),
+      );
     const q = i.client.music.get(i.guildId);
 
-    // Retry applying when a saved enabled setting did not take because Lavalink was missing the DSP plugin.
+    // Retry applying when a saved enabled setting did not take because Lavalink was missing the loudness plugin.
     if (q && q.normalizationEnabled !== enabled) {
       try {
         await q.setNormalization(enabled);
