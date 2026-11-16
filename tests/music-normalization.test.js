@@ -74,7 +74,7 @@ test('active queue receives peak filter immediately, and off removes it', async 
   });
   await GuildQueue.prototype.setNormalization.call(queue, false);
   assert.equal(queue.normalizationEnabled, false);
-  assert.deepEqual(calls[1], { pluginFilters: null });
+  assert.deepEqual(calls[1], { pluginFilters: {} });
 });
 
 test('Lavalink filter errors do not save a setting or pretend the change succeeded', async () => {
