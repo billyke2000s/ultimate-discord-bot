@@ -25,7 +25,7 @@ test('release checks accept only the repository-compatible manifest and fixed as
                 assets: [
                   {
                     name: 'update.json',
-                    browser_download_url: 'https://github.com/billyke2000s/ultimate-discord-bot/releases/download/v-new/update.json',
+                    browser_download_url: `https://github.com/${manifest.repository}/releases/download/v-new/update.json`,
                   },
                 ],
               }
