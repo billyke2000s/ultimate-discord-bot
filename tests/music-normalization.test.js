@@ -95,6 +95,9 @@ test('disabled by default after restart-compatible settings merge; command is a 
   assert.equal(getSettings('fresh-guild').music.normalization, false);
   const data = command.data.toJSON();
   const option = data.options.find((o) => o.name === 'normalization').options[0];
-  assert.deepEqual(option.choices.map((x) => x.value), ['on', 'off']);
+  assert.deepEqual(
+    option.choices.map((x) => x.value),
+    ['on', 'off'],
+  );
   assert.equal(option.required, true);
 });
