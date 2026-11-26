@@ -2,6 +2,7 @@
 // Manage Server only, private reply, never shows tokens or passwords.
 // The embed is a short summary; the attached text file has every number for whoever is debugging.
 const fs = require('node:fs');
+const path = require('node:path');
 const {
   SlashCommandBuilder,
   PermissionFlagsBits: P,
@@ -126,6 +127,25 @@ async function checkYouTubeAudio(fetchStream = fetch) {
   }
 }
 
+async function recentYouTubeHelperError(now = Date.now() / 1000) {
+  try {
+    const directory = process.env.UPDATE_STATUS_DIR || '/app/update-status';
+    const file = path.join(directory, 'youtube-diagnostics.json');
+    const snapshot = JSON.parse(await fs.promises.readFile(file, 'utf8'));
+    if (
+      snapshot?.schema === 1 &&
+      Number.isFinite(snapshot.at) &&
+      snapshot.at <= now + 5 &&
+      now - snapshot.at <= 60 &&
+      snapshot.state === 'dispose-callback'
+    ) {
+      return 'TypeError: a.addOnDisposeCallback is not a function';
+    }
+  } catch {
+    // Hosts with the previous update worker do not publish this file.
+  }
+  return null;
+}
 const gb = (bytes) => `${(bytes / 1e9).toFixed(1)} GB`;
 const mb = (bytes) => `${Math.round(bytes / 1e6)} MB`;
 const pct = (x) => `${Math.round(x)}%`;
@@ -412,6 +432,8 @@ const diagnostics = {
         youtubeAudio = { status: 'unknown', detail: 'Lavalink is disconnected' };
       }
       add(youtubeAudio.status, 'YouTube audio', youtubeAudio.detail);
+      const helperError = await recentYouTubeHelperError();
+      if (helperError) add('fail', 'YouTube helper log', helperError, NEXT['YouTube helper']);
       await check('Spotify links', async () => {
         // A long-standing public song. Checks Spotify's embed page can still be read (no account/helper involved).
         const sp = await withTimeout(
@@ -445,6 +467,7 @@ const diagnostics = {
 
       const youtubeSummary = { ok: 'audio probe passed', fail: 'audio probe failed', unknown: 'audio unverified' };
       summaries.Music += ` · YouTube ${youtubeSummary[youtubeAudio.status]}`;
+      if (helperError) summaries.Music += `\nYouTube helper: ${helperError}`;
 
       // --- Server (the VPS) ---
       group = 'Server';
