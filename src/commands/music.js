@@ -16,14 +16,14 @@ const eph = (content) => ({ content, flags: MessageFlags.Ephemeral });
 // --- shared checks ---------------------------------------------------------
 
 // Returns the queue if music is playing and the user is in the same voice channel, otherwise replies and returns null.
-async function needQueue(interaction) {
+async function needQueue(interaction, { allowIdle = false } = {}) {
   const vc = interaction.member.voice?.channelId || null;
   if (!vc) {
     await interaction.reply(eph('Join a voice channel first.'));
     return null;
   }
   const q = interaction.client.music.get(interaction.guildId);
-  if (!q?.current) {
+  if (!q || (!allowIdle && !q.current)) {
     await interaction.reply(eph('Nothing is playing.'));
     return null;
   }
@@ -40,7 +40,7 @@ async function doVote(interaction, q, kind) {
     return interaction.reply(eph('There is no previous song in this music session yet.'));
   if (kind === 'shuffle' && q.tracks.length < 2)
     return interaction.reply(eph('There need to be at least two songs queued to shuffle.'));
-  const title = truncate(q.current.info.title, 80);
+  const title = truncate(q.current?.info.title || 'the current track', 80);
   if (isStaff(interaction.member)) {
     if (kind === 'skip') {
       await interaction.reply({
@@ -61,10 +61,12 @@ async function doVote(interaction, q, kind) {
       });
       return q.refreshPanel();
     }
-    await interaction.reply({
-      embeds: [embed('grey').setDescription(`⏹ ${interaction.user} (staff) stopped the music.`)],
-    });
-    return q.destroy();
+    return Promise.all([
+      q.destroy(),
+      interaction.reply({
+        embeds: [embed('grey').setDescription(`⏹ ${interaction.user} (staff) stopped the music.`)],
+      }),
+    ]);
   }
   const v = q.vote(kind, interaction.user.id);
   if (v.passed) {
@@ -87,8 +89,10 @@ async function doVote(interaction, q, kind) {
       });
       return q.refreshPanel();
     }
-    await interaction.reply({ embeds: [embed('grey').setDescription(`⏹ Stopped by vote (${v.count}/${v.needed}).`)] });
-    return q.destroy();
+    return Promise.all([
+      q.destroy(),
+      interaction.reply({ embeds: [embed('grey').setDescription(`⏹ Stopped by vote (${v.count}/${v.needed}).`)] }),
+    ]);
   }
   const label = { skip: 'Skip', previous: 'Go back', stop: 'Stop', shuffle: 'Shuffle' }[kind];
   await interaction.reply(
@@ -454,7 +458,7 @@ const stop = {
     .setName('stop')
     .setDescription('Vote to stop the music and clear the queue (staff stop instantly)'),
   async execute(interaction) {
-    const q = await needQueue(interaction);
+    const q = await needQueue(interaction, { allowIdle: true });
     if (!q) return;
     await doVote(interaction, q, 'stop');
   },
@@ -502,7 +506,7 @@ const components = {
     if (q) await doVote(i, q, 'skip');
   },
   'music:stop': async (i) => {
-    const q = await needQueue(i);
+    const q = await needQueue(i, { allowIdle: true });
     if (q) await doVote(i, q, 'stop');
   },
   'music:shuffle': async (i) => {
