@@ -1253,9 +1253,7 @@ class MusicManager {
       q.changes++;
       if (data.failurePaused === true) {
         q.failurePaused = true;
-        q.send(
-          embed('grey').setDescription('Queue still held after playback failures. Use /play to try again.'),
-        );
+        q.send(embed('grey').setDescription('Queue still held after playback failures. Use /play to try again.'));
         return true;
       }
       const song = `**${truncate(tracks[0].info.title, 80)}**`;
