@@ -65,6 +65,7 @@ const NEXT = {
     'Check the music and cipher logs on the VPS. The YouTube login may need renewing (README → Troubleshooting).',
   'Spotify links':
     'Spotify may have changed its page. Try another public link; if they all fail, the bot needs an update.',
+  'YouTube account': 'Check the Google account directly for a suspension notice and review the Lavalink log.',
   'YouTube helper': 'Check the cipher container on the VPS: docker compose logs --tail 80 yt-cipher',
   'Scam filter': 'The VPS could not download the scam lists. Mass-ping and cross-channel spam checks still work.',
   Lockdown: 'New members are being kicked. Turn it off with /lockdown off when the raid is over.',
@@ -319,6 +320,17 @@ const diagnostics = {
               );
             else add('off', 'Audio smoothness', 'nothing playing, so nothing to measure');
           }
+          const normalizationRequested = getSettings(g.id).music?.normalization === true;
+          const normalizationLoaded = info?.plugins?.some((p) => p.name === 'obskyra-loudness');
+          if (!normalizationRequested) {
+            add('off', 'Music normalization', 'disabled in server settings');
+          } else if (!normalizationLoaded) {
+            add('fail', 'Music normalization', 'enabled in settings, but the Lavalink plugin is missing');
+          } else if (q && !q.normalizationEnabled) {
+            add('warn', 'Music normalization', 'enabled in settings, but not active on this player');
+          } else {
+            add('ok', 'Music normalization', q ? 'active on this player' : 'ready for the next music session');
+          }
           const yt = plugins.find((p) => p.toLowerCase().includes('youtube'));
           add(
             yt ? 'ok' : 'fail',
@@ -336,6 +348,18 @@ const diagnostics = {
             n ? `works (${n} results)` : `no results (${res?.loadType || 'no reply'})`,
           );
         });
+      }
+      const accountError = client.music.youtubeAccountError;
+      if (process.env.YOUTUBE_OAUTH?.toLowerCase() !== 'true') {
+        add('off', 'YouTube account', 'OAuth login is disabled');
+      } else if (accountError && Date.now() - accountError.at < 15 * 60_000) {
+        if (accountError.status === 'suspended') {
+          add('fail', 'YouTube account', 'YouTube reported an account suspension, termination or ban during playback');
+        } else {
+          add('warn', 'YouTube account', 'Recent YouTube authentication error. Account suspension is unconfirmed.');
+        }
+      } else {
+        add('unknown', 'YouTube account', 'OAuth is enabled. No recent account error was observed.');
       }
       await check('YouTube helper', async () => {
         // Any HTTP answer means the yt-cipher container is up (it may say 401/404 without the password; that's fine).
