@@ -66,6 +66,7 @@ const NEXT = {
   'Spotify links':
     'Spotify may have changed its page. Try another public link; if they all fail, the bot needs an update.',
   'YouTube account': 'Check the Google account directly for a suspension notice and review the Lavalink log.',
+  'YouTube audio': 'Inspect both logs: docker compose logs --since 5m lavalink yt-cipher',
   'YouTube helper': 'Check the cipher container on the VPS: docker compose logs --tail 80 yt-cipher',
   'Scam filter': 'The VPS could not download the scam lists. Mass-ping and cross-channel spam checks still work.',
   Lockdown: 'New members are being kicked. Turn it off with /lockdown off when the raid is over.',
@@ -98,6 +99,33 @@ const withTimeout = async (p, ms = 8000) => {
     clearTimeout(timer);
   }
 };
+async function checkYouTubeAudio(fetchStream = fetch) {
+  const host = process.env.LAVALINK_HOST || 'localhost';
+  const port = process.env.LAVALINK_PORT || 2333;
+  const response = await fetchStream(`http://${host}:${port}/youtube/stream/BaW_jenozKc`, {
+    headers: { Authorization: process.env.LAVALINK_PASSWORD || 'youshallnotpass' },
+    signal: AbortSignal.timeout(12000),
+    redirect: 'error',
+  });
+  if (!response.ok) {
+    await response.body?.cancel();
+    if ([401, 403, 404].includes(response.status)) {
+      return { status: 'unknown', detail: `Lavalink stream probe unavailable (HTTP ${response.status})` };
+    }
+    return { status: 'fail', detail: `Lavalink could not open the test stream (HTTP ${response.status})` };
+  }
+  if (!response.body) return { status: 'fail', detail: 'Lavalink returned an empty test stream' };
+  const reader = response.body.getReader();
+  try {
+    const { value } = await reader.read();
+    return value?.length
+      ? { status: 'ok', detail: 'received audio stream data from Lavalink' }
+      : { status: 'fail', detail: 'Lavalink returned an empty test stream' };
+  } finally {
+    void reader.cancel().catch(() => {});
+  }
+}
+
 const gb = (bytes) => `${(bytes / 1e9).toFixed(1)} GB`;
 const mb = (bytes) => `${Math.round(bytes / 1e6)} MB`;
 const pct = (x) => `${Math.round(x)}%`;
@@ -370,6 +398,20 @@ const diagnostics = {
         await response.body?.cancel();
         add(response.status >= 500 ? 'warn' : 'ok', 'YouTube helper', `reachable (HTTP ${response.status})`);
       });
+      let youtubeAudio;
+      if (node) {
+        try {
+          youtubeAudio = await checkYouTubeAudio();
+        } catch (error) {
+          youtubeAudio =
+            error.name === 'TimeoutError'
+              ? { status: 'fail', detail: 'Lavalink did not return stream data within 12 seconds' }
+              : { status: 'unknown', detail: 'could not reach the Lavalink stream probe' };
+        }
+      } else {
+        youtubeAudio = { status: 'unknown', detail: 'Lavalink is disconnected' };
+      }
+      add(youtubeAudio.status, 'YouTube audio', youtubeAudio.detail);
       await check('Spotify links', async () => {
         // A long-standing public song. Checks Spotify's embed page can still be read (no account/helper involved).
         const sp = await withTimeout(
@@ -398,8 +440,11 @@ const diagnostics = {
           .join(' · ');
       } else {
         add('off', 'Now playing', 'nothing');
-        summaries.Music = 'ready · nothing playing';
+        summaries.Music = 'nothing playing';
       }
+
+      const youtubeSummary = { ok: 'audio probe passed', fail: 'audio probe failed', unknown: 'audio unverified' };
+      summaries.Music += ` · YouTube ${youtubeSummary[youtubeAudio.status]}`;
 
       // --- Server (the VPS) ---
       group = 'Server';
