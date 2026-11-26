@@ -732,7 +732,9 @@ class GuildQueue {
     this.playback = null;
     this.changes++;
     this.persist(true);
-    this.send(embed('bad').setDescription('Playback kept failing for five seconds. Queue held. Use /play to try again.'));
+    this.send(
+      embed('bad').setDescription('Playback kept failing for five seconds. Queue held. Use /play to try again.'),
+    );
     await this.player.stopTrack().catch(() => {});
   }
 
@@ -1252,7 +1254,7 @@ class MusicManager {
       if (data.failurePaused === true) {
         q.failurePaused = true;
         q.send(
-          embed('grey').setDescription('The music queue is still held after playback failures. Use /play to try again.'),
+          embed('grey').setDescription('Queue still held after playback failures. Use /play to try again.'),
         );
         return true;
       }
