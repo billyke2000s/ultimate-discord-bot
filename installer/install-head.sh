@@ -15,9 +15,9 @@ PLUGIN_URL="https://github.com/lavalink-devs/youtube-source/releases/download/${
 # script fills in its exact version below; yt-cipher's is the author's own official image. If either can't be
 # downloaded, the installer builds it here instead (slower, needs more RAM).
 BOT_IMAGE="@@BOT_IMAGE@@"
-CIPHER_IMAGE="ghcr.io/kikkia/yt-cipher@sha256:4c5ec381ff57336cfc24822d2b526a5ad7cd0171f61065a1bbc87bb736842449"
+CIPHER_IMAGE="ghcr.io/kikkia/yt-cipher@sha256:0e4b6dded97558c28421fcb592afffa5b2b27718f8a2c15c1f95c3cc46f98eb3"
 CIPHER_REPO="https://github.com/kikkia/yt-cipher.git"
-CIPHER_COMMIT="1e1fd8e2f34ca90cf23545be72e46307bd3d3d2a"   # tested version of yt-cipher (pinned)
+CIPHER_COMMIT="91d55a24fafd83fa85f72dfe6914626b05f799f6"   # pinned source fallback
 DENO_IMAGE="denoland/deno:2.9.7"                           # yt-cipher's build image, pinned instead of :latest
 # ---------- output helpers ----------
 B=$'\e[1m'; G=$'\e[32m'; Y=$'\e[33m'; R=$'\e[31m'; C=$'\e[36m'; N=$'\e[0m'
