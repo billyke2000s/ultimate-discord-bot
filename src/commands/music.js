@@ -406,7 +406,7 @@ const play = {
         return interaction.editReply(`I just joined <#${q.voiceChannelId}> for someone else. Join that channel.`);
       const added = q.add(result.tracks);
       const wasIdle = !q.current;
-      await q.start();
+      await q.start({ retryFailures: true });
       if (q.destroyed) return interaction.editReply('This music session ended before playback could start.');
       const where =
         q.textChannel && q.textChannel.id !== interaction.channelId ? ` · controls in ${q.textChannel}` : '';
