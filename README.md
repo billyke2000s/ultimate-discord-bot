@@ -396,6 +396,23 @@ Restart everything with `docker compose restart`. After editing `.env`, run `doc
 
 ---
 
+## Cloudflare Turnstile
+
+The image CAPTCHA can be followed by a Cloudflare Turnstile check. When enabled, both checks are required before the bot grants the member role.
+
+Create a Managed Turnstile widget with your verification hostname, then route that hostname over HTTPS to `http://127.0.0.1:8787` on the VPS using an existing reverse proxy or a Cloudflare Tunnel running on the VPS. Forward the `/verify/*` path and preserve POST requests. The bot's listener is published on VPS loopback only.
+
+Set these values in `/root/server-bot/.env` and run `docker compose up -d bot` with the new Compose file:
+
+```dotenv
+TURNSTILE_ENABLED=true
+TURNSTILE_ORIGIN=https://verify.obskyra.stream
+TURNSTILE_SITE_KEY=your_site_key
+TURNSTILE_SECRET_KEY=your_secret_key
+```
+
+Keep the secret in `.env`. Verification links are private and expire after five minutes or on bot restart.
+
 ## Limits
 
 - **YouTube and Spotify use unofficial routes.** Streaming YouTube through a bot is against YouTube's terms, which is why a throwaway account is used. Either service can change and break playback until the tools are updated.
