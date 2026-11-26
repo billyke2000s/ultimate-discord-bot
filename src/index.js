@@ -61,6 +61,7 @@ const stopHealth = startHealth(client);
 registerEvents(client);
 
 client.once(Events.ClientReady, async (c) => {
+  verify.startTurnstile(c);
   console.log(`Logged in as ${c.user.tag} in ${c.guilds.cache.size} server(s)`);
   // Register slash commands per server (and hide /setup rebuild where it's locked).
   for (const g of c.guilds.cache.values()) {
