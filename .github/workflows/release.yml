@@ -81,6 +81,38 @@ jobs:
       - name: Build install.sh (pinned to the exact image just built)
         run: bash scripts/build-installer.sh "${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}" dist/install.sh
 
+      - name: Prepare the pinned YouTube plugin for the release image
+        run: |
+          source <(sed -n '/^PLUGIN_VERSION=/p; /^PLUGIN_SHA256=/p; /^PLUGIN_URL=/p' installer/install-head.sh)
+          curl -fsSL --retry 3 "$PLUGIN_URL" -o "$RUNNER_TEMP/youtube.jar"
+          echo "$PLUGIN_SHA256  $RUNNER_TEMP/youtube.jar" | sha256sum -c -
+          python3 - "$RUNNER_TEMP/youtube.jar" <<'PY'
+          import base64, pathlib, sys, zipfile
+          configs = list(pathlib.Path('tools').glob('Tv-*-patched.class.b64'))
+          assert len(configs) == 1
+          patch = base64.b64decode(configs[0].read_text())
+          target = 'dev/lavalink/youtube/clients/Tv.class'
+          with zipfile.ZipFile(sys.argv[1]) as source:
+              assert target in source.namelist()
+              with zipfile.ZipFile('lavalink/release-youtube.jar', 'w', zipfile.ZIP_DEFLATED) as output:
+                  for entry in source.infolist():
+                      output.writestr(entry, patch if entry.filename == target else source.read(entry.filename))
+          PY
+          cp lavalink/Dockerfile lavalink/Dockerfile.release
+          printf '\nCOPY release-youtube.jar /opt/Lavalink/plugins/youtube-source.jar\n' >> lavalink/Dockerfile.release
+
+      - name: Publish the complete Lavalink image
+        id: lavalink
+        uses: docker/build-push-action@v6
+        with:
+          context: ./lavalink
+          file: ./lavalink/Dockerfile.release
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.name.outputs.image }}-lavalink:sha-${{ github.sha }}
+          cache-from: type=gha,scope=lavalink
+          cache-to: type=gha,mode=max,scope=lavalink
+
       - name: Check install.sh
         run: bash -n dist/install.sh
 
@@ -88,11 +120,26 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BOT_RELEASE_IMAGE: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
+          LAVALINK_RELEASE_IMAGE: ${{ steps.name.outputs.image }}-lavalink@${{ steps.lavalink.outputs.digest }}
           NOTES_JSON: ${{ steps.notes.outputs.json }}
         run: |
           tag="${{ steps.name.outputs.version }}"
           export RELEASE_TAG="$tag"
-          python3 -c 'import json,os; json.dump({"repository":os.environ["GITHUB_REPOSITORY"],"tag":os.environ["RELEASE_TAG"],"commit":os.environ["GITHUB_SHA"],"image":os.environ["BOT_RELEASE_IMAGE"],"deployment":1},open("dist/update.json","w"))'
+          python3 - <<'PY'
+          import json, os, pathlib, re
+          env = os.environ
+          installer = pathlib.Path('installer/install-head.sh').read_text()
+          cipher = re.search(r'^CIPHER_IMAGE="([^"]+)"$', installer, re.M)[1]
+          compose = pathlib.Path('docker-compose.yml').read_text()
+          compose, count = re.subn(r'(?m)^(    image: )server-bot-lavalink-loudness:local$', lambda m: m[1] + env['LAVALINK_RELEASE_IMAGE'], compose)
+          assert count == 1
+          compose, count = re.subn(r'(?m)^      - \./lavalink/plugins/[^\n]+\n', '', compose)
+          assert count == 1
+          manifest = dict(repository=env['GITHUB_REPOSITORY'], tag=env['RELEASE_TAG'], commit=env['GITHUB_SHA'],
+                          image=env['BOT_RELEASE_IMAGE'], deployment=2, lavalink=env['LAVALINK_RELEASE_IMAGE'],
+                          cipher=cipher, compose=compose, application=pathlib.Path('lavalink/application.yml').read_text())
+          pathlib.Path('dist/update.json').write_text(json.dumps(manifest))
+          PY
           # Notes go through a file, never the shell, since PR titles can contain any characters.
           python3 -c 'import json,os; notes=json.loads(os.environ.get("NOTES_JSON") or "[]"); open("dist/notes.md","w").write(("## What'"'"'s new\n" + "".join("- %s\n" % n for n in notes) + "\n" if notes else "") + "Download **install.sh**, upload it to /root on your VPS and run: `bash install.sh`. Already installed? Use `/update` in Discord.\n")'
           gh release create "$tag" dist/install.sh dist/update.json \

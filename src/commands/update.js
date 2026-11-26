@@ -29,13 +29,16 @@ const command = {
         return i.editReply(`${message}\nYou are already on this release.`);
       if (i.options.getBoolean('check-only')) return i.editReply(`${message}\nRun /update to install it.`);
       const music = i.client.music.queues.size > 0;
-      if (music && !(await bridge.hostFeatures()).includes('song-gap'))
+      const features = await bridge.hostFeatures();
+      if (latest.deployment === 2 && !features.includes('full-stack'))
+        return i.editReply(`${message}\nRun the latest install.sh once to upgrade the VPS update worker.`);
+      if (music && !features.includes('song-gap'))
         return i.editReply(
           `${message}\nEnd the music session with /stop, then run /update again. (Rerun install.sh on the VPS once so updates can wait for the gap between songs instead.)`,
         );
       await bridge.request(guild.id, i.user.id);
       return i.editReply(
-        `${message}\nUpdate requested. The VPS checks within about 15 seconds, backs up, and briefly restarts the bot if the update is eligible.${music ? ' Music is playing, so it installs in the gap after the current song (within 10 minutes), and the music then carries on with the next song.' : ''} I’ll DM the result; if DMs are blocked, use /update check-only:true afterwards. This updates the bot image, not Lavalink or host configuration.`,
+        `${message}\nUpdate requested. The VPS checks within about 15 seconds, backs up, and briefly restarts the bot if the update is eligible.${music ? ' Music is playing, so it installs in the gap after the current song (within 10 minutes), and the music then carries on with the next song.' : ''} I’ll DM the result; if DMs are blocked, use /update check-only:true afterwards.${latest.deployment === 2 ? ' This release includes the bot and music services.' : ''}`,
       );
     } catch (e) {
       return i.editReply(`Update not confirmed: ${e.message}`);

@@ -160,7 +160,7 @@ People who haven't verified only see ✅・verify. Members see everything except
 - **YouTube:** uses the throwaway account's login, a patched YouTube client and the `yt-cipher` helper.
 - Volume is set by `DEFAULT_VOLUME` in `.env`.
 - **Optional music loudness normalization:** the actual Discord server owner can run `/musicsettings normalization on` or `/musicsettings normalization off`. It defaults to **off**, is saved separately for each server, survives restarts and takes effect immediately on the playing song (and future songs). A custom Lavalink filter measures K-weighted audio loudness and adjusts gain both upward and downward toward approximately **−18 LUFS**. It smooths volume changes and protects against clipping. It is **not microphone-aware ducking**, and because it works live without pre-analysing each full song, very short intros and highly dynamic recordings can still vary. The owner can still adjust `DEFAULT_VOLUME` if overall music playback is too loud.
-- **Install requirement:** Lavalink must run the custom image built from `lavalink/Dockerfile`, which bundles the `lavalink/normalizer` Java plugin. On existing VPS installations, rerun the current `install.sh` to build the image and restart Lavalink; automatic **bot-only** updates do not update Lavalink. A missing plugin prevents the feature from working, without affecting normal music playback.
+- **Install requirement:** Lavalink must run the custom image built from `lavalink/Dockerfile`, which bundles the `lavalink/normalizer` Java plugin. On existing VPS installations, rerun the current `install.sh` to build the image and restart Lavalink; full-stack releases also update Lavalink through `/update` once the VPS update worker has been upgraded. A missing plugin prevents the feature from working, without affecting normal music playback.
 - **Lyrics:** when a song has timed lyrics, the panel shows the line being sung (it updates every 5 seconds, so it can lag a little behind the singing). 📝 Lyrics or `/lyrics` opens a private view of about 15 lines with the current one in bold, following the song (and the next songs) for up to 14 minutes. Lyrics come from [LRCLIB](https://lrclib.net), a free community database: most well-known songs are there, but messy YouTube titles sometimes don't match, and then you get a web search link instead. Lyrics belong to their writers, which is why the full text is only ever shown privately. To turn lyrics off completely, add `LYRICS=off` to `.env` and restart.
 
 More detail: [playlist behaviour](docs/PLAYLIST_STARTUP.md).
@@ -275,7 +275,7 @@ Replies are private. On the day, the bot posts in 🎂・birthdays with the memb
 
 ### Update from Discord
 
-The **actual server owner** can run `/update` (or `/update check-only:true` to only check). The VPS backs up, installs the new bot, checks it's healthy and rolls back if not. The result arrives by DM.
+The **actual server owner** can run `/update` (or `/update check-only:true` to only check). The VPS backs up, updates the bot, Lavalink and the YouTube helper from the same release, checks readiness and rolls back if that fails. The result arrives by DM.
 
 **Music keeps going.** If music is playing, the panel says an update is ready and the update waits for the end of the current song. Then the bot saves the queue, steps out for about a minute while the new version starts, and carries on with the next song, posting what's new. If no song ends within 10 minutes (a long mix or a livestream), it updates anyway and carries on from the same second. If the update is called off, the music comes straight back. A short silence between those two songs is unavoidable: the bot has to restart, and Discord ends its audio when it does. (Installations set up before this feature need `install.sh` run once for it; until then `/update` asks you to `/stop` first.)
 
@@ -287,11 +287,11 @@ Stop music first, then on the VPS:
 
 ```bash
 cd /root &&
-curl -fL https://github.com/billyke2000s/discord/releases/latest/download/install.sh -o install.sh &&
+curl -fL https://github.com/billyke2000s/ultimate-discord-bot/releases/latest/download/install.sh -o install.sh &&
 bash install.sh
 ```
 
-Choose **Yes** for **"Keep your current settings and just update?"** It backs up, keeps your settings and locks, and restarts the containers. Use this route for music server or YouTube changes too: automatic updates only replace the bot itself. An old `install.sh` installs its old version, so always download it fresh.
+Choose **Yes** for **"Keep your current settings and just update?"** It backs up, keeps your settings and locks, and restarts the containers. Run this once on older installations to upgrade the VPS update worker. Future full-stack releases can then be applied from Discord. The updater replaces the release-managed Compose and Lavalink configuration and keeps `.env`, the database and locks. An old `install.sh` installs its old version, so always download it fresh.
 
 ### Automatic updates
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in bot-only deployment. No downloaded scripts or Docker socket in the bot."""
+"""Opt-in release deployment. No downloaded scripts or Docker socket in the bot."""
 import argparse
 import datetime
 import json
@@ -14,6 +14,9 @@ from pathlib import Path
 
 REPO = 'billyke2000s/ultimate-discord-bot'
 IMAGE = re.compile(r'ghcr\.io/billyke2000s/ultimate-discord-bot@sha256:[0-9a-f]{64}')
+LAVALINK_IMAGE = re.compile(r'ghcr\.io/billyke2000s/ultimate-discord-bot-lavalink@sha256:[0-9a-f]{64}')
+CIPHER_IMAGE = re.compile(r'ghcr\.io/kikkia/yt-cipher@sha256:[0-9a-f]{64}')
+STACK_FILES = {'compose': Path('docker-compose.yml'), 'application': Path('lavalink/application.yml')}
 # While music plays, an update waits for the gap between two songs: the bot sees this file (through its
 # read-only status mount), saves the queue when the current song ends and leaves voice, and the update
 # goes in once no music session is left. After WAIT_MAX it goes in anyway; the bot then resumes the
@@ -33,9 +36,14 @@ def get_json(url):
 
 def validate_manifest(data, tag):
     if (data.get('repository') != REPO or data.get('tag') != tag or
-            data.get('deployment') != 1 or not IMAGE.fullmatch(data.get('image', '')) or
+            data.get('deployment') not in (1, 2) or not IMAGE.fullmatch(data.get('image', '')) or
             not re.fullmatch('[0-9a-f]{40}', data.get('commit', ''))):
         raise ValueError('Release is not compatible with this deployment; use the manual installer')
+    if data['deployment'] == 2 and (
+            not LAVALINK_IMAGE.fullmatch(data.get('lavalink', '')) or
+            not CIPHER_IMAGE.fullmatch(data.get('cipher', '')) or
+            any(not isinstance(data.get(key), str) or not data[key].strip() for key in STACK_FILES)):
+        raise ValueError('Invalid full-stack release manifest')
     return data['image']
 
 
@@ -52,7 +60,8 @@ def latest_release():
         raise ValueError('Unexpected release asset location')
     manifest = get_json(url)
     image = validate_manifest(manifest, tag)
-    return {'version': tag, 'commit': manifest['commit'], 'image': image}
+    return {'version': tag, 'commit': manifest['commit'], 'image': image,
+            **({key: manifest[key] for key in ('lavalink', 'cipher', *STACK_FILES)} if manifest['deployment'] == 2 else {})}
 
 
 def latest_image():
@@ -119,6 +128,47 @@ def deploy(image, env_path, original, recreate=None, check=None):
         raise
 
 
+def recreate_stack():
+    compose('up', '-d', '--no-build', '--force-recreate', 'yt-cipher', 'lavalink', 'bot')
+    helper = compose('ps', '-q', 'yt-cipher')
+    if not helper or not json.loads(run('docker', 'inspect', helper))[0]['State'].get('Running'):
+        raise RuntimeError('YouTube helper did not stay running')
+
+
+def replace_cipher(text, image):
+    matches = re.findall(r'^CIPHER_IMAGE=.*$', text, re.M)
+    if len(matches) > 1:
+        raise ValueError('.env must not contain duplicate CIPHER_IMAGE lines')
+    if matches:
+        return re.sub(r'^CIPHER_IMAGE=.*$', f'CIPHER_IMAGE={image}', text, flags=re.M)
+    return text.rstrip('\n') + f'\nCIPHER_IMAGE={image}\n'
+
+
+def restore_stack(files, env):
+    if (not isinstance(files, dict) or set(files) != set(STACK_FILES) or
+            not all(isinstance(value, str) for value in files.values())):
+        raise ValueError('Invalid stack configuration in recovery journal')
+    for key, path in STACK_FILES.items():
+        atomic_write(path, files[key], mode=0o644)
+    atomic_write(Path('.env'), env)
+    recreate_stack()
+    wait_healthy()
+
+
+def deploy_stack(release, original, previous):
+    env = replace_cipher(replace_image(original, release['image']), release['cipher'])
+    try:
+        for key, path in STACK_FILES.items():
+            atomic_write(path, release[key], mode=0o644)
+        atomic_write(Path('.env'), env)
+        compose('config', '--quiet')
+        recreate_stack()
+        wait_healthy()
+    except Exception:
+        restore_stack(previous, original)
+        raise
+
+
 def read_pending():
     try:
         data = json.loads(PENDING.read_text())
@@ -176,9 +226,12 @@ def recover_pending(directory):
     if (not isinstance(saved.get('env'), str) or not IMAGE.fullmatch(saved.get('image', '')) or
             len(re.findall(r'^BOT_IMAGE=.*$', saved['env'], re.M)) != 1):
         raise ValueError('Invalid recovery journal; restore .env from backups/ by hand after checking it')
-    atomic_write(Path('.env'), saved['env'])
-    compose('up', '-d', '--no-deps', '--no-build', 'bot')
-    wait_healthy()
+    if 'stack' in saved:
+        restore_stack(saved['stack'], saved['env'])
+    else:
+        atomic_write(Path('.env'), saved['env'])
+        compose('up', '-d', '--no-deps', '--no-build', 'bot')
+        wait_healthy()
     atomic_write(Path('.failed-update'), saved['image'])
     journal.unlink()
     print('Recovered previous settings/image after an interrupted deployment')
@@ -242,6 +295,10 @@ def apply(directory, release, state, failed):
         raise ValueError('Running image and .env differ; reconcile before updating')
     # Pull first: download failure cannot stop the running bot.
     run('docker', 'pull', image)
+    full_stack = 'lavalink' in release
+    if full_stack:
+        run('docker', 'pull', release['lavalink'])
+        run('docker', 'pull', release['cipher'])
     health = json.loads(compose('exec', '-T', 'bot', 'cat', '/tmp/server-bot-health.json'))
     if not music_gap(health, release):
         print('Music started during download; the update waits for the gap between songs')
@@ -257,12 +314,19 @@ def apply(directory, release, state, failed):
     compose('exec', '-T', 'bot', 'node', 'src/lib/backup.js', 'pre-update')
     journal = Path('.update-pending.json')
     # 0600, root-only folder: holds the settings to restore if this run is interrupted.
-    atomic_write(journal, json.dumps({'backup': str(backup / '.env'), 'image': image, 'env': original}))
+    saved = {'backup': str(backup / '.env'), 'image': image, 'env': original}
+    if full_stack:
+        saved['stack'] = {key: path.read_text() for key, path in STACK_FILES.items()}
+        shutil.copy2(STACK_FILES['application'], backup / 'lavalink-application.yml')
+    atomic_write(journal, json.dumps(saved))
     # pending.json stays until the deployment has finished: if it went now, the old bot would think the
     # update was called off and start the next song seconds before being restarted. The new bot ignores
     # it (it names the new bot's own version); on failure main() clears it and the old bot resumes.
     try:
-        deploy(image, env_path, original)
+        if full_stack:
+            deploy_stack(release, original, saved['stack'])
+        else:
+            deploy(image, env_path, original)
     except Exception:
         atomic_write(failed, image)
         raise
