@@ -1,6 +1,6 @@
 # Runs Lavalink + the YouTube cipher helper + the bot, all on this VPS.
 # Normally started by install.sh. Manual start:  docker compose up -d --build
-# None of these containers publish a port: nothing here is reachable from the internet.
+# Only the optional verification page is published, on VPS loopback for a reverse proxy.
 
 # Each container keeps at most 3 log files of 10 MB; older logs are deleted, so logs can't fill the disk.
 x-logging: &logging
@@ -68,6 +68,8 @@ services:
     image: ${BOT_IMAGE:-server-bot-local:latest}
     build: .
     container_name: discord-bot
+    ports:
+      - "127.0.0.1:8787:8787" # Turnstile listener starts only when enabled
     restart: unless-stopped
     logging: *logging
     env_file: .env
