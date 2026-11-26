@@ -6,7 +6,8 @@ test('three wrong codes lock the member out; a new image is refused until the lo
   assert.ok(Buffer.isBuffer(captcha.newChallenge('g', 'u')));
   assert.equal(captcha.check('g', 'u', 'nope1'), 'wrong');
   assert.equal(captcha.check('g', 'u', 'nope2'), 'wrong');
-  assert.equal(captcha.check('g', 'u', 'nope3'), 'locked');
+  assert.ok(Buffer.isBuffer(captcha.newChallenge('g', 'u')), 'members can redraw before lockout');
+  assert.equal(captcha.check('g', 'u', 'nope3'), 'locked', 'redrawing preserves previous wrong guesses');
   assert.ok(captcha.lockedFor('g', 'u') > captcha.LOCKOUT_MS - 5000);
   assert.equal(captcha.newChallenge('g', 'u'), null, '"New image" must not reset the tries');
   // Other members and other servers are unaffected.
