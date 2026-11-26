@@ -53,12 +53,16 @@ async function latestRelease() {
   if (
     manifest.repository !== REPO ||
     manifest.tag !== release.tag_name ||
-    manifest.deployment !== 1 ||
+    ![1, 2].includes(manifest.deployment) ||
     !/^[a-f0-9]{40}$/.test(manifest.commit) ||
     !/^ghcr\.io\/billyke2000s\/ultimate-discord-bot@sha256:[a-f0-9]{64}$/.test(manifest.image)
   )
     throw Error('This release needs the manual installer.');
-  return { version: manifest.tag, commit: manifest.commit };
+  return {
+    version: manifest.tag,
+    commit: manifest.commit,
+    ...(manifest.deployment === 2 ? { deployment: 2 } : {}),
+  };
 }
 // Can the VPS updater wait for the gap between songs? (Its heartbeat says so; older installs can't.)
 async function hostFeatures() {
