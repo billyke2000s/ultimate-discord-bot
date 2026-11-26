@@ -11,7 +11,7 @@ const LOCKOUT_MS = 5 * 60 * 1000; // after MAX_ATTEMPTS wrong codes, no new imag
 const challenges = new Map(); // key guildId:userId -> { code, expires, attempts }
 const lockouts = new Map(); // key guildId:userId -> time the lockout ends
 
-function randomCode(len = 5) {
+function randomCode(len = 6) {
   let s = '';
   for (let i = 0; i < len; i++) s += CHARS[crypto.randomInt(CHARS.length)];
   return s;
@@ -19,8 +19,8 @@ function randomCode(len = 5) {
 
 function render(code) {
   if (!createCanvas) ({ createCanvas } = require('@napi-rs/canvas'));
-  const w = 260,
-    h = 90;
+  const w = 320,
+    h = 100;
   const c = createCanvas(w, h);
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#2b2d31';
@@ -49,9 +49,13 @@ function render(code) {
     ctx.save();
     ctx.translate(25 + i * step + step / 2, h / 2 + (Math.random() * 16 - 8));
     ctx.rotate((Math.random() - 0.5) * 0.7);
+    ctx.transform(0.9 + Math.random() * 0.2, 0, (Math.random() - 0.5) * 0.4, 1, 0, 0);
     ctx.font = `bold ${38 + crypto.randomInt(10)}px sans-serif`;
     ctx.fillStyle = `hsl(${crypto.randomInt(360)},70%,75%)`;
     ctx.textAlign = 'center';
+    ctx.strokeStyle = '#2b2d31';
+    ctx.lineWidth = 3;
+    ctx.strokeText(code[i], 0, 0);
     ctx.fillText(code[i], 0, 0);
     ctx.restore();
   }
@@ -78,8 +82,14 @@ function lockedFor(guildId, userId, now = Date.now()) {
 function newChallenge(guildId, userId) {
   if (lockedFor(guildId, userId)) return null;
   const code = randomCode();
-  challenges.set(`${guildId}:${userId}`, { code, expires: Date.now() + TTL_MS, attempts: 0 });
-  return render(code);
+  const png = render(code);
+  const key = `${guildId}:${userId}`;
+  const now = Date.now();
+  const previous = challenges.get(key);
+  // Redrawing can improve readability, but it must not reset a member's guess limit.
+  const attempts = previous && previous.expires > now ? previous.attempts : 0;
+  challenges.set(key, { code, expires: now + TTL_MS, attempts });
+  return png;
 }
 
 // Returns 'ok' | 'wrong' | 'expired' | 'locked'
