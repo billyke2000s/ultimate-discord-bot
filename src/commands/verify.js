@@ -14,6 +14,7 @@ const {
   MessageFlags,
 } = require('discord.js');
 const captcha = require('../lib/captcha');
+const turnstile = require('../lib/turnstile');
 const { db, getSettings } = require('../lib/db');
 const { embed, log } = require('../lib/util');
 const antiRaid = require('../lib/antiraid');
@@ -23,7 +24,11 @@ function panel() {
     embeds: [
       embed('info')
         .setTitle('Verification')
-        .setDescription('Click **Verify** and type the code from the image to get access to the server.'),
+        .setDescription(
+          turnstile.enabled()
+            ? 'Click **Verify**, solve the image CAPTCHA, then finish the Cloudflare check.'
+            : 'Click **Verify** and type the code from the image to get access to the server.',
+        ),
     ],
     components: [
       new ActionRowBuilder().addComponents(
@@ -116,7 +121,27 @@ async function submit(interaction) {
     );
   }
 
-  // passed
+  if (turnstile.enabled()) {
+    let url;
+    try {
+      url = turnstile.issue(interaction.guildId, interaction.user.id, interaction.member.joinedTimestamp);
+    } catch {
+      return interaction.reply({
+        content: 'The Cloudflare verification page is temporarily unavailable. Ask a moderator.',
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+    return interaction.reply({
+      content: 'Image CAPTCHA passed. Complete the Cloudflare check within five minutes.',
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('Finish verification').setURL(url),
+        ),
+      ],
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+
   try {
     await interaction.member.roles.add(s.verify.memberRole, 'Passed captcha');
   } catch (e) {
@@ -133,6 +158,28 @@ async function submit(interaction) {
   await interaction.reply({ content: '✅ Verified. Welcome in!', flags: MessageFlags.Ephemeral });
   await log(interaction.guild, embed('ok').setDescription(`✅ ${interaction.user} passed verification.`));
   await sendWelcome(interaction.member, s);
+}
+
+function startTurnstile(client) {
+  turnstile.start(async ({ guildId, userId, joinedAt }) => {
+    const guild = client.guilds.cache.get(guildId);
+    const member = await guild?.members.fetch({ user: userId, force: true });
+    const s = getSettings(guildId);
+    if (
+      !member ||
+      member.joinedTimestamp !== joinedAt ||
+      !s.verify.enabled ||
+      !s.verify.memberRole ||
+      antiRaid.isLocked(guildId)
+    ) {
+      throw new Error('Verification no longer available');
+    }
+    if (member.roles.cache.has(s.verify.memberRole)) return;
+    await member.roles.add(s.verify.memberRole, 'Passed image CAPTCHA and Cloudflare Turnstile');
+    db.prepare('DELETE FROM pending_verify WHERE guild_id = ? AND user_id = ?').run(guildId, userId);
+    await Promise.resolve(log(guild, embed('ok').setDescription(`✅ ${member} passed verification.`))).catch(() => {});
+    await sendWelcome(member, s);
+  });
 }
 
 async function sendWelcome(member, s) {
@@ -190,4 +237,5 @@ module.exports = {
   panel,
   sendWelcome,
   sweepUnverified,
+  startTurnstile,
 };
