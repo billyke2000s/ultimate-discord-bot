@@ -52,16 +52,15 @@ async function handle(req, res, settings, complete) {
   if (!session || session.expires <= Date.now()) return reply(res, 410, 'Link expired. Start again in Discord.');
   if (session.state !== 'pending') return reply(res, 409, 'Verification is already in progress.');
   if (req.method === 'GET') {
-    return reply(
-      res,
-      200,
-      '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">' +
-        '<title>Discord verification</title><script src="https://challenges.cloudflare.com/turnstile/v0/api.js" defer></script>' +
-        '<main><h1>Finish Discord verification</h1><form method="post">' +
-        '<div class="cf-turnstile" data-sitekey="' + settings.sitekey + '" data-action="' + action +
-        '" data-cdata="' + id + '"></div><button type="submit">Finish verification</button></form></main></html>',
-      'text/html; charset=utf-8',
-    );
+    const page = [
+      '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">',
+      '<title>Discord verification</title>',
+      '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" defer></script>',
+      '<main><h1>Finish Discord verification</h1><form method="post">',
+      `<div class="cf-turnstile" data-sitekey="${settings.sitekey}" data-action="${action}" data-cdata="${id}"></div>`,
+      '<button type="submit">Finish verification</button></form></main></html>',
+    ].join('');
+    return reply(res, 200, page, 'text/html; charset=utf-8');
   }
   if (req.method !== 'POST') return reply(res, 405, 'Method not allowed.');
   if (req.headers.origin !== settings.origin.origin) return reply(res, 403, 'Invalid request origin.');
