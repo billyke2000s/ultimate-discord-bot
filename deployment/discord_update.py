@@ -5,6 +5,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 import time
 import urllib.request
 from pathlib import Path
@@ -71,6 +72,22 @@ def installed_version(state):
     return env.get('BOT_BUILD_VERSION', 'unknown (older image)')
 
 
+def write_youtube_diagnostics(status_dir):
+    # Publish only recognized messages. Raw Docker logs can contain credentials and signed URLs.
+    try:
+        result = subprocess.run(
+            ['docker', 'logs', '--since', '5m', '--tail', '200', 'yt-cipher'],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            errors='replace', timeout=4, check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        state = 'unavailable'
+    else:
+        state = ('dispose-callback' if 'TypeError: a.addOnDisposeCallback is not a function' in result.stdout
+                 else 'no-known-error')
+    write_status(status_dir / 'youtube-diagnostics.json', {'schema': 1, 'at': time.time(), 'state': state})
+
+
 def process(directory):
     os.chdir(directory)
     status_dir = Path('updates/status')
@@ -83,6 +100,7 @@ def process(directory):
     # 'song-gap': this worker finishes updates that wait for the gap between songs (see update.py).
     write_status(status_dir / 'heartbeat.json',
                  {'schema': 1, 'at': time.time(), 'enabled': enabled, 'features': ['song-gap', 'full-stack']})
+    write_youtube_diagnostics(status_dir)
     if not handle_request(directory, status_dir, enabled):
         run_waiting_update(directory, enabled)
 
