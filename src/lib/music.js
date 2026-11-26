@@ -9,6 +9,9 @@ const { AudioMonitor } = require('./audio-monitor');
 const lyrics = require('./lyrics');
 const { updateMessage } = require('./version-notes');
 
+const { performance } = require('node:perf_hooks');
+
+const FAILURE_WINDOW_MS = 5_000;
 const SAVE_EVERY_MS = 5_000; // save queue changes within 5 s
 const SAVE_POSITION_MS = 30_000; // and the song position at least every 30 s while playing
 const RESUME_MAX_AGE_MS = 30 * 60_000; // don't resume a session saved more than 30 minutes ago
@@ -192,6 +195,8 @@ class GuildQueue {
     this.prefetching = false;
     this.volume = Number(process.env.DEFAULT_VOLUME || 60);
     this.normalizationEnabled = false;
+    this.firstFailureAt = null;
+    this.failurePaused = false;
     this.votes = { skip: new Set(), stop: new Set(), previous: new Set(), shuffle: new Set() };
     this.history = [];
     this.playedCurrent = false;
@@ -218,10 +223,10 @@ class GuildQueue {
     player.on('start', (event) => {
       if (!this.matchesPlaybackEvent(event)) return;
       this.monitor.start();
+      if (this.playback) this.playback.startedAt = performance.now();
       this.monitor.pause(this.player.paused);
       this.clock = { base: this.playback?.startAt || 0, at: Date.now() };
       this.votes.skip.clear();
-      this.votes.stop.clear();
       this.votes.previous.clear();
       this.votes.shuffle.clear();
       this.postPanel();
@@ -232,26 +237,29 @@ class GuildQueue {
       if (e.reason === 'replaced' || e.reason === 'cleanup') return;
       if (!this.matchesPlaybackEvent(e)) return;
       this.monitor.stop(e.reason);
-      this.advanceAfterEvent(e);
+      if (e.reason === 'finished' && !this.playback?.failed) this.firstFailureAt = null;
+      this.advanceAfterEvent(e, e.reason?.toLowerCase() === 'loadfailed');
     });
     player.on('stuck', (e) => {
       if (!this.matchesPlaybackEvent(e)) return;
       this.monitor.emit('track-stuck');
       this.monitor.stop('stuck');
-      this.advanceAfterEvent(e);
+      this.advanceAfterEvent(e, true);
     });
     player.on('exception', (e) => {
       if (!this.matchesPlaybackEvent(e)) return;
       // Raw source error text may contain signed URLs or credentials: keep it out of public chat.
       // Only the event type is recorded; the error text goes to the private bot log.
       this.monitor.emit('track-exception');
+      const source = this.current.playbackInfo?.sourceName || this.current.info.sourceName;
+      if (source === 'youtube') this.manager.recordYouTubeError(e.exception);
       console.warn('[music] track exception:', truncate(e.exception?.message || 'unknown error', 300));
       this.send(
         embed('bad').setDescription(
           `Couldn't play **${truncate(this.current?.info.title || 'that track', 80)}**. Skipping to the next song.`,
         ),
       );
-      this.advanceAfterEvent(e);
+      this.advanceAfterEvent(e, true);
     });
     player.on('closed', () => {
       this.monitor.emit('voice-closed');
@@ -555,6 +563,7 @@ class GuildQueue {
       fallbackChannelId: this.fallbackChannel?.id || null,
       volume: this.volume,
       current: GuildQueue.entry(this.current),
+      failurePaused: this.failurePaused,
       tracks: this.tracks.map(GuildQueue.entry),
       savedAt: Date.now(),
     };
@@ -595,16 +604,24 @@ class GuildQueue {
   }
 
   async setNormalization(enabled) {
-    // An empty plugin-filter map clears loudness leveling when switched off. Global volume is unchanged.
-    // Apply to the live player now; the filter also carries over to subsequent tracks.
-    await this.player.setFilters({
-      pluginFilters: enabled ? { loudness: { ...NORMALIZATION_FILTER } } : {},
-    });
+    const { pluginFilters, ...filters } = this.player.filters || {};
+    const nextPluginFilters = { ...pluginFilters };
+    if (enabled) nextPluginFilters.loudness = { ...NORMALIZATION_FILTER };
+    else delete nextPluginFilters.loudness;
+    await this.player.setFilters({ ...filters, pluginFilters: nextPluginFilters });
     this.normalizationEnabled = enabled;
     this.refreshPanel();
   }
 
-  async start() {
+  async start({ retryFailures = false } = {}) {
+    if (this.failurePaused) {
+      if (!retryFailures) return;
+      if (this.transition) await this.transition;
+      if (this.destroyed) return;
+      this.failurePaused = false;
+      this.firstFailureAt = null;
+      this.changes++;
+    }
     if (this.current) return;
     await this.next();
   }
@@ -664,7 +681,7 @@ class GuildQueue {
         if (!this.destroyed) await report({ error: err.message });
       } finally {
         this.imports.delete(task);
-        if (!this.destroyed && !this.current && !this.imports.size) this.scheduleIdleLeave();
+        if (!this.destroyed && !this.failurePaused && !this.current && !this.imports.size) this.scheduleIdleLeave();
       }
     });
     this.imports.add(task);
@@ -698,19 +715,45 @@ class GuildQueue {
     return !track?.encoded || track.encoded === this.current.encoded;
   }
 
-  advanceAfterEvent(event) {
+  recordFailure(startedAt) {
+    const now = performance.now();
+    if (this.firstFailureAt === null || (startedAt != null && now - startedAt >= FAILURE_WINDOW_MS)) {
+      this.firstFailureAt = now;
+    }
+  }
+
+  failureWindowExpired() {
+    return this.firstFailureAt !== null && performance.now() - this.firstFailureAt >= FAILURE_WINDOW_MS;
+  }
+
+  async pauseAfterFailures() {
+    this.failurePaused = true;
+    this.current = null;
+    this.playback = null;
+    this.changes++;
+    this.persist(true);
+    this.send(
+      embed('bad').setDescription('Playback kept failing for five seconds. Queue held. Use /play to try again.'),
+    );
+    await this.player.stopTrack().catch(() => {});
+  }
+
+  advanceAfterEvent(event, failed = false) {
     const ended = this.current;
     if (!this.matchesPlaybackEvent(event)) return;
     const playback = this.playback;
     const ending = playback?.id || ended;
     // A very short/failed track can end before the play REST request settles.
     // Preserve that event and coalesce duplicates for this exact queue entry.
+    if (failed && playback) playback.failed = true;
     if (this.ending === ending) return;
     this.ending = ending;
     this.monitor.emit('queue-advance', { queued: this.tracks.length });
     Promise.resolve(this.transition)
       .then(() => {
-        if (!this.destroyed && this.current === ended && this.playback === playback) return this.next();
+        if (this.destroyed || this.current !== ended || this.playback !== playback) return;
+        if (playback?.failed) this.recordFailure(playback.startedAt);
+        return this.next();
       })
       .catch((err) => console.error('[music advance]', err.message))
       .finally(() => {
@@ -719,7 +762,7 @@ class GuildQueue {
   }
 
   async advance() {
-    if (this.destroyed) return;
+    if (this.destroyed || this.failurePaused) return;
     if (this.current && this.playedCurrent) {
       this.history.push(this.current);
       if (this.history.length > MAX_QUEUE) this.history.shift();
@@ -729,12 +772,16 @@ class GuildQueue {
     // loading, which would lose the rest of it; the VPS updates anyway after 10 minutes.)
     if (this.manager.updatePending && this.current && this.tracks.length && !this.imports.size)
       return this.holdForUpdate();
-    for (;;) {
+    while (!this.destroyed) {
+      if ((this.tracks.length || this.imports.size) && this.failureWindowExpired()) return this.pauseAfterFailures();
       this.current = this.tracks.shift() || null;
       this.changes++;
       if (!this.current) {
         this.endPanel('finished');
-        if (!this.imports.size) this.scheduleIdleLeave();
+        if (!this.imports.size) {
+          this.firstFailureAt = null;
+          this.scheduleIdleLeave();
+        }
         return;
       }
       const track = this.current;
@@ -757,6 +804,7 @@ class GuildQueue {
           this.prefetch();
           return;
         } catch (err) {
+          if (this.destroyed) return;
           this.monitor.emit('play-request-failed');
           console.warn('[music] play request failed:', truncate(err.message, 300));
           this.send(
@@ -764,6 +812,7 @@ class GuildQueue {
               `Couldn't start **${truncate(track.info.title, 80)}**. Skipping to the next song.`,
             ),
           );
+          this.recordFailure();
           continue;
         }
       }
@@ -780,6 +829,7 @@ class GuildQueue {
           `Couldn't find **${truncate(this.current.info.title, 80)}** on YouTube, skipping it.`,
         ),
       );
+      this.recordFailure();
     }
   }
 
@@ -888,10 +938,12 @@ class GuildQueue {
 }
 
 class MusicManager {
-  constructor(client, { store } = {}) {
+  constructor(client, { store, getMusicSettings } = {}) {
     this.client = client;
     // Saved sessions (src/lib/music-store.js). Passed in so tests and tools can run without a database.
     this.store = store || null;
+    this.getMusicSettings = getMusicSettings;
+    this.youtubeAccountError = null;
     this.restoring = null;
     this.updatePending = null; // { version } while the VPS waits for the gap between songs to update
     this.updated = null; // { version, notes, at } when this start-up followed an update
@@ -953,6 +1005,17 @@ class MusicManager {
     for (const q of this.queues.values()) q.refreshPanel();
     if (was && !this.updatePending && this.client.isReady?.())
       this.restoreAll().catch((err) => console.error('[music] resume after a cancelled update:', err.message));
+  }
+
+  recordYouTubeError(exception) {
+    const message = [exception?.message, exception?.cause, exception?.causeStackTrace].filter(Boolean).join(' ');
+    if (/account (?:has been |is )?(?:suspended|terminated|disabled|banned)/i.test(message)) {
+      this.youtubeAccountError = { status: 'suspended', at: Date.now() };
+    } else if (/invalid_grant|token (?:has been |is )?(?:expired|revoked)|sign in|login.required/i.test(message)) {
+      if (this.youtubeAccountError?.status !== 'suspended' || Date.now() - this.youtubeAccountError.at >= 15 * 60_000) {
+        this.youtubeAccountError = { status: 'login-rejected', at: Date.now() };
+      }
+    }
   }
 
   async withPlayLock(guildId, work) {
@@ -1129,7 +1192,7 @@ class MusicManager {
       q.fallbackChannel = textChannel;
       this.queues.set(guild.id, q);
       await player.setGlobalVolume(q.volume).catch(() => {});
-      if (this.getMusicSettings?.(guild.id)?.normalization === true) {
+      if (!q.destroyed && this.getMusicSettings?.(guild.id)?.normalization === true) {
         try {
           await q.setNormalization(true);
         } catch (err) {
@@ -1188,6 +1251,11 @@ class MusicManager {
       if (Number.isFinite(data.volume) && data.volume !== q.volume) await q.setVolume(data.volume);
       q.tracks.push(...tracks.slice(0, MAX_QUEUE));
       q.changes++;
+      if (data.failurePaused === true) {
+        q.failurePaused = true;
+        q.send(embed('grey').setDescription('Queue still held after playback failures. Use /play to try again.'));
+        return true;
+      }
       const song = `**${truncate(tracks[0].info.title, 80)}**`;
       const updated = this.updated && Date.now() - this.updated.at < 15 * 60_000 ? this.updated : null;
       q.send(

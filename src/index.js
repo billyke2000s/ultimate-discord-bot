@@ -50,7 +50,10 @@ const client = new Client({
 });
 
 // Shoukaku must be created before login so it can catch the READY packet.
-client.music = new MusicManager(client, { store: require('./lib/music-store') });
+client.music = new MusicManager(client, {
+  store: require('./lib/music-store'),
+  getMusicSettings: (guildId) => getSettings(guildId).music,
+});
 // Did this start follow an update? Music that resumes then says what's new.
 client.music.updated = require('./lib/version-notes').checkUpdated();
 if (client.music.updated) console.log(`Updated to ${client.music.updated.version}`);
