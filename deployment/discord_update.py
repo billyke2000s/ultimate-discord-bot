@@ -82,7 +82,7 @@ def process(directory):
         enabled = False
     # 'song-gap': this worker finishes updates that wait for the gap between songs (see update.py).
     write_status(status_dir / 'heartbeat.json',
-                 {'schema': 1, 'at': time.time(), 'enabled': enabled, 'features': ['song-gap']})
+                 {'schema': 1, 'at': time.time(), 'enabled': enabled, 'features': ['song-gap', 'full-stack']})
     if not handle_request(directory, status_dir, enabled):
         run_waiting_update(directory, enabled)
 
