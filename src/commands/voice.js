@@ -1,5 +1,6 @@
 // Join-to-create voice channels. The owner controls their channel from a panel the bot posts in the
 // channel's own chat (like the music panel), or with /vc. Only the owner and staff can use either.
+const { setTimeout: delay } = require('node:timers/promises');
 const {
   SlashCommandBuilder,
   PermissionFlagsBits,
@@ -27,6 +28,9 @@ if (
   db.exec('ALTER TABLE temp_vcs ADD COLUMN panel_id TEXT');
 const getVc = db.prepare('SELECT * FROM temp_vcs WHERE channel_id = ?');
 const creating = new Set(); // guildId:userId while their channel is being created (stops quick rejoins making two)
+const initializing = new Set();
+const cleaning = new Set();
+const removeVc = db.prepare('DELETE FROM temp_vcs WHERE channel_id = ?');
 const setOwner = db.prepare('UPDATE temp_vcs SET owner_id = ? WHERE channel_id = ?');
 const setPanel = db.prepare('UPDATE temp_vcs SET panel_id = ? WHERE channel_id = ?');
 const eph = (content) => ({ content, flags: MessageFlags.Ephemeral });
@@ -378,7 +382,11 @@ async function handleVoiceState(oldState, newState, settings) {
       .all(guild.id, member.id)
       .map((r) => guild.channels.cache.get(r.channel_id))
       .find(Boolean);
-    if (existing) return member.voice.setChannel(existing).catch(() => {});
+    if (existing) {
+      await member.voice.setChannel(existing).catch(() => {});
+      if (oldState.channelId && oldState.channelId !== existing.id) await cleanupIfEmpty(guild, oldState.channelId);
+      return;
+    }
     const key = `${guild.id}:${member.id}`;
     if (creating.has(key)) return;
     creating.add(key);
@@ -403,16 +411,16 @@ async function handleVoiceState(oldState, newState, settings) {
         member.id,
         Date.now(),
       );
-      const moved = await member.voice.setChannel(ch).then(
-        () => true,
-        async () => {
-          // they left the lobby before we could move them
-          await ch.delete().catch(() => {});
-          db.prepare('DELETE FROM temp_vcs WHERE channel_id = ?').run(ch.id);
-          return false;
-        },
-      );
+      initializing.add(ch.id);
+      const moved = await member.voice
+        .setChannel(ch)
+        .then(
+          () => true,
+          () => false,
+        )
+        .finally(() => initializing.delete(ch.id));
       if (moved) await refreshPanel(ch).catch((e) => console.error('[jtc] panel failed:', e.message));
+      else await cleanupIfEmpty(guild, ch.id);
     } catch (e) {
       console.error('[jtc] create failed:', e.message);
     } finally {
@@ -447,14 +455,35 @@ function buildOverwrites(parent, ownerId, guild) {
   return [...map.values()];
 }
 
+function hasOccupants(guild, channelId) {
+  // A voice state can exist before its GuildMember is cached. Count it unless it is a known bot.
+  return guild.voiceStates.cache.some((state) => state.channelId === channelId && state.member?.user.bot !== true);
+}
+
 async function cleanupIfEmpty(guild, channelId) {
-  const row = getVc.get(channelId);
-  if (!row) return;
-  const ch = guild.channels.cache.get(channelId);
-  // only bots left (e.g. the music bot) counts as empty
-  if (ch && ch.members.some((m) => !m.user.bot)) return;
-  db.prepare('DELETE FROM temp_vcs WHERE channel_id = ?').run(channelId);
-  if (ch) await ch.delete('Temp voice channel empty').catch(() => {});
+  if (!getVc.get(channelId) || cleaning.has(channelId) || initializing.has(channelId)) return;
+  if (!guild.available || hasOccupants(guild, channelId)) return;
+
+  cleaning.add(channelId);
+  try {
+    // Give pending voice state updates time to arrive before making an irreversible delete.
+    await delay(1500);
+    if (!guild.available || hasOccupants(guild, channelId)) return;
+    const channel = guild.channels.cache.get(channelId);
+    if (channel) {
+      try {
+        await channel.delete('Temp voice channel empty');
+      } catch (e) {
+        if (e.code !== 10003) {
+          console.error('[vc] could not delete empty channel:', e.message);
+          return;
+        }
+      }
+    }
+    removeVc.run(channelId);
+  } finally {
+    cleaning.delete(channelId);
+  }
 }
 
 // Delete temp channels that are empty. Runs on startup (catches ones that emptied while the
