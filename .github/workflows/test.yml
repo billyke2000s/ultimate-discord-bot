@@ -22,7 +22,7 @@ jobs:
       - name: Verify Lavalink loads the loudness plugin
         run: |
           docker run -d --name lavalink-loudness-test -p 127.0.0.1:2333:2333 \
-            -e LAVALINK_SERVER_PASSWORD=ci-loudness lavalink-loudness-test
+            -e SERVER_PORT=2333 -e LAVALINK_SERVER_PASSWORD=ci-loudness lavalink-loudness-test
           trap 'docker logs lavalink-loudness-test; docker rm -f lavalink-loudness-test' EXIT
           curl --silent --show-error --fail --retry 30 --retry-delay 2 --retry-all-errors --max-time 5 \
             -H 'Authorization: ci-loudness' http://127.0.0.1:2333/v4/info |
