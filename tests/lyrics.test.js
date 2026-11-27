@@ -9,7 +9,7 @@ require.cache[require.resolve('../src/lib/util')] = {
       s = String(s ?? '');
       return s.length > n ? s.slice(0, n - 1) + '…' : s;
     },
-    fmtDuration: () => '0:00',
+    fmtDuration: (ms) => String(Math.floor(ms / 1000)),
     isBotAdmin: () => false,
   },
 };
@@ -195,7 +195,7 @@ test('the shared panel skips overlapping edits and catches up to the latest play
   await first;
 
   const latest = q.refreshPanel();
-  assert.match(descriptions[1], /0:10/);
+  assert.match(descriptions[1], /`10`/);
   assert.match(descriptions[1], /Second/);
   finishEdit();
   await latest;
