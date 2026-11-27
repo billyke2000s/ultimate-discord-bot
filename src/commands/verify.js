@@ -203,14 +203,14 @@ async function sendWelcome(member, s) {
 }
 
 // Kick people who never verified. Runs every minute from index.js.
-const getPending = db.prepare('SELECT joined_at FROM pending_verify WHERE guild_id = ? AND user_id = ?');
-const removePending = db.prepare('DELETE FROM pending_verify WHERE guild_id = ? AND user_id = ? AND joined_at = ?');
 let sweeping = false;
 
 async function sweepUnverified(client) {
   if (sweeping) return;
   sweeping = true;
   try {
+    const getPending = db.prepare('SELECT joined_at FROM pending_verify WHERE guild_id = ? AND user_id = ?');
+    const removePending = db.prepare('DELETE FROM pending_verify WHERE guild_id=? AND user_id=? AND joined_at=?');
     for (const row of db.prepare('SELECT * FROM pending_verify').all()) {
       const guild = client.guilds.cache.get(row.guild_id);
       if (!guild?.available) continue;
