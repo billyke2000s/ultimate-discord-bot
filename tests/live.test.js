@@ -151,6 +151,29 @@ test('new YouTube videos are posted oldest first, at most 3, skipping the live s
   assert.equal(again.sent.length, 0, 'nothing new');
 });
 
+test('a failed upload announcement is retried without reposting successful announcements', async () => {
+  db.prepare(
+    "INSERT INTO live_accounts (guild_id, platform, account, label, ext_id, last_video) VALUES ('g', 'youtube', '@c', 'C', 'UCx', 'v1')",
+  ).run();
+  const channel = fakeChannel();
+  const send = channel.send.bind(channel);
+  channel.send = async (payload) => {
+    if (payload.embeds[0].title === 'v3') throw new Error('Discord unavailable');
+    return send(payload);
+  };
+  const status = async () => ({ live: false });
+  const videos = async () =>
+    ['v4', 'v3', 'v2', 'v1'].map((id) => ({ id, title: id, url: `https://www.youtube.com/watch?v=${id}` }));
+  await live.checkAccount(row(), channel, {}, status, videos);
+  assert.deepEqual(channel.sent.map((p) => p.embeds[0].title), ['v2']);
+  assert.equal(row().last_video, 'v2');
+
+  channel.send = send;
+  await live.checkAccount(row(), channel, {}, status, videos);
+  assert.deepEqual(channel.sent.map((p) => p.embeds[0].title), ['v2', 'v3', 'v4']);
+  assert.equal(row().last_video, 'v4');
+});
+
 test('YouTube feed and page parsing', async () => {
   pages['https://www.youtube.com/feeds/videos.xml?channel_id=UCx'] = feed('aaaaaaaaaaa', 'bbbbbbbbbbb');
   const videos = await live.youtubeVideos('UCx');

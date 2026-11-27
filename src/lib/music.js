@@ -41,6 +41,17 @@ const LINK_HOSTS = [
   'vimeo.com',
   'bandcamp.com',
 ];
+function voiceListeners(guild, channelId) {
+  const listeners = new Map();
+  if (!channelId) return listeners;
+  for (const state of guild?.voiceStates.cache.values() ?? []) {
+    if (state.channelId === channelId && state.member?.user.bot !== true) {
+      listeners.set(state.id, state.member);
+    }
+  }
+  return listeners;
+}
+
 function isSupportedLink(query) {
   let url;
   try {
@@ -317,14 +328,7 @@ class GuildQueue {
 
   // Humans in the bot's voice channel (the bot and other bots don't count).
   listeners() {
-    const listeners = new Map();
-    if (!this.voiceChannelId) return listeners;
-    for (const state of this.guild?.voiceStates.cache.values() ?? []) {
-      if (state.channelId === this.voiceChannelId && state.member?.user.bot !== true) {
-        listeners.set(state.id, state.member);
-      }
-    }
-    return listeners;
+    return voiceListeners(this.guild, this.voiceChannelId);
   }
 
   send(e) {
@@ -1243,9 +1247,10 @@ class MusicManager {
       this.store.remove(guildId);
       return false;
     };
-    if (!guild || data?.v !== 1 || Date.now() - updatedAt > RESUME_MAX_AGE_MS) return forget();
+    if (data?.v !== 1 || Date.now() - updatedAt > RESUME_MAX_AGE_MS) return forget();
+    if (!guild?.available) return false;
     const vc = guild.channels.cache.get(data.voiceChannelId);
-    if (!vc || !vc.members?.some((m) => !m.user.bot)) return forget();
+    if (!vc || !voiceListeners(guild, vc.id).size) return forget();
     const tracks = [data.current, ...(data.tracks || [])].filter((t) => t?.info?.title);
     if (!tracks.length) return forget();
     if (data.current && tracks[0] === data.current && position > 0) tracks[0].resumeAt = position;

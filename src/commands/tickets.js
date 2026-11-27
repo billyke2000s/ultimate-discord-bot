@@ -146,8 +146,20 @@ async function close(interaction) {
 }
 
 function deleteSoon(interaction) {
-  db.prepare('DELETE FROM tickets WHERE channel_id = ?').run(interaction.channelId);
-  setTimeout(() => interaction.channel.delete('Ticket closed').catch(() => {}), 5000);
+  setTimeout(async () => {
+    try {
+      await interaction.channel.delete('Ticket closed');
+    } catch (error) {
+      if (error.code !== 10003) {
+        console.error('[tickets] could not delete closed ticket:', error.message);
+        await interaction
+          .editReply({ content: 'I couldn’t delete this ticket. Use the close button again to retry.' })
+          .catch(() => {});
+        return;
+      }
+    }
+    db.prepare('DELETE FROM tickets WHERE channel_id = ?').run(interaction.channelId);
+  }, 5000);
 }
 
 // Close only once the transcript is safely in the log channel. If it can't be saved, the ticket stays open

@@ -304,12 +304,17 @@ async function checkAccount(row, channel, settings, statusFn = liveStatus, video
         const seen = videos.findIndex((v) => v.id === row.last_video);
         // Unknown last video (first run or the feed moved on): don't flood, just remember the newest.
         const fresh = seen === -1 ? [] : videos.slice(0, seen).reverse().slice(-3);
-        for (const v of fresh) {
-          if (status?.key && v.id === status.key) continue; // the stream itself, already announced
-          await channel.send(videoPost(row, v, settings)).catch(() => {});
-          events.push({ type: 'video', id: v.id });
+        if (seen === -1 && videos[0].id !== row.last_video) {
+          videoStmt.run(videos[0].id, row.guild_id, row.platform, row.account);
         }
-        if (videos[0].id !== row.last_video) videoStmt.run(videos[0].id, row.guild_id, row.platform, row.account);
+        for (const v of fresh) {
+          const streamAlreadyAnnounced = status?.key === v.id && (row.is_live || events.some((e) => e.type === 'live'));
+          if (!streamAlreadyAnnounced) {
+            await channel.send(videoPost(row, v, settings));
+            events.push({ type: 'video', id: v.id });
+          }
+          videoStmt.run(v.id, row.guild_id, row.platform, row.account);
+        }
       }
     } catch (err) {
       events.push({ type: 'error', message: err.message });

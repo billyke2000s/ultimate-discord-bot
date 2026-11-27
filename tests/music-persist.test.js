@@ -131,7 +131,12 @@ function guildWith({ humans = true } = {}) {
     ['vc', { id: 'vc', members }],
     ['text', { id: 'text' }],
   ]);
-  return { id: 'g1', channels: { cache: channels } };
+  const voiceStates = new Map(
+    humans
+      ? [['h', { id: 'h', channelId: 'vc', member: null }]]
+      : [['bot', { id: 'bot', channelId: 'vc', member: members.get('bot') }]],
+  );
+  return { id: 'g1', available: true, channels: { cache: channels }, voiceStates: { cache: voiceStates } };
 }
 
 test('after a restart, the song carries on from where it was and the rest of the queue follows', async () => {

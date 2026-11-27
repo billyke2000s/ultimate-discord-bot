@@ -253,19 +253,37 @@ ok "$(docker --version)"
 
 # ---------- 5. backup before updating ----------
 mkdir -p "$INSTALL_DIR/backups" && chown 1000:1000 "$INSTALL_DIR/backups" && chmod 700 "$INSTALL_DIR/backups"
-if [ -f "$INSTALL_DIR/docker-compose.yml" ] && [ -n "$(cd "$INSTALL_DIR" && docker compose ps -a -q bot 2>/dev/null)" ]; then
+EXISTING_BOT=""
+if [ -f "$INSTALL_DIR/docker-compose.yml" ]; then
+  EXISTING_BOT="$(cd "$INSTALL_DIR" && docker compose ps -a -q bot)" || die "Could not inspect the existing bot. Update cancelled."
+fi
+if [ -n "$EXISTING_BOT" ]; then
   step "Backing up before updating"
   BK="$INSTALL_DIR/backups/pre-update-$(date +%Y%m%d-%H%M%S)"
-  mkdir -p "$BK" && chmod 700 "$BK"
-  ( cd "$INSTALL_DIR" && docker compose stop bot >/dev/null 2>&1 || true )   # stopped = the database copy is consistent
-  if ( cd "$INSTALL_DIR" && docker compose cp bot:/app/data/bot.sqlite "$BK/bot.sqlite" >/dev/null 2>&1 ); then
-    ( cd "$INSTALL_DIR" && docker compose cp bot:/app/data/bot.sqlite-wal "$BK/bot.sqlite-wal" >/dev/null 2>&1 || true )
-    ok "Database backed up"
-  else
-    warn "No database to back up yet"
+  mkdir -p "$BK" && chown 1000:1000 "$BK" && chmod 700 "$BK"
+  # Read the database and any WAL through SQLite's online backup API, even if the bot is stopped.
+  ( cd "$INSTALL_DIR" && docker compose run -T --rm --no-deps --pull never --user 1000:1000 \
+      -v "$BK:/pre-update" --entrypoint node bot -e '
+        const fs = require("node:fs");
+        const Database = require("better-sqlite3");
+        const db = new Database("/app/data/bot.sqlite", { readonly: true, fileMustExist: true });
+        db.backup("/pre-update/bot.sqlite").then(() => {
+          db.close();
+          fs.chmodSync("/pre-update/bot.sqlite", 0o600);
+        }).catch((error) => {
+          console.error(error.message);
+          process.exitCode = 1;
+        });
+      ' ) || die "Database backup failed. Update cancelled before replacing the running bot."
+  [ -s "$BK/bot.sqlite" ] || die "Database backup is empty. Update cancelled."
+  ok "Database backed up"
+  if [ -f "$INSTALL_DIR/.env" ]; then
+    cp -p "$INSTALL_DIR/.env" "$BK/.env" || die "Could not back up .env. Update cancelled."
+    ok ".env backed up"
   fi
-  cp -p "$INSTALL_DIR/.env" "$BK/.env" 2>/dev/null && ok ".env backed up"
-  [ -d "$INSTALL_DIR/locks" ] && cp -rp "$INSTALL_DIR/locks" "$BK/locks"
+  if [ -d "$INSTALL_DIR/locks" ]; then
+    cp -rp "$INSTALL_DIR/locks" "$BK/locks" || die "Could not back up rebuild locks. Update cancelled."
+  fi
   chmod -R go-rwx "$BK"
   # keep the 5 newest pre-update backups
   find "$INSTALL_DIR/backups" -maxdepth 1 -type d -name 'pre-update-*' | sort | head -n -5 | xargs -r rm -rf
