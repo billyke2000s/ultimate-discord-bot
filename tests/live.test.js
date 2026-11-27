@@ -162,8 +162,8 @@ test('a failed upload announcement is retried without reposting successful annou
     return send(payload);
   };
   const status = async () => ({ live: false });
-  const videos = async () =>
-    ['v4', 'v3', 'v2', 'v1'].map((id) => ({ id, title: id, url: `https://www.youtube.com/watch?v=${id}` }));
+  const uploads = ['v4', 'v3', 'v2', 'v1'];
+  const videos = async () => uploads.map((id) => ({ id, title: id, url: `https://www.youtube.com/watch?v=${id}` }));
   await live.checkAccount(row(), channel, {}, status, videos);
   assert.deepEqual(channel.sent.map((p) => p.embeds[0].title), ['v2']);
   assert.equal(row().last_video, 'v2');
