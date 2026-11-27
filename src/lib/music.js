@@ -317,8 +317,14 @@ class GuildQueue {
 
   // Humans in the bot's voice channel (the bot and other bots don't count).
   listeners() {
-    const ch = this.guild?.channels.cache.get(this.voiceChannelId);
-    return ch ? ch.members.filter((m) => !m.user.bot) : new Map();
+    const listeners = new Map();
+    if (!this.voiceChannelId) return listeners;
+    for (const state of this.guild?.voiceStates.cache.values() ?? []) {
+      if (state.channelId === this.voiceChannelId && state.member?.user.bot !== true) {
+        listeners.set(state.id, state.member);
+      }
+    }
+    return listeners;
   }
 
   send(e) {
