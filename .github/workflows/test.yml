@@ -18,6 +18,14 @@ jobs:
       - run: npm run format:check
       - run: npm test
       - name: Build Lavalink loudness plugin image
-        run: docker build --progress=plain -f lavalink/Dockerfile lavalink
+        run: docker build --progress=plain -t lavalink-loudness-test -f lavalink/Dockerfile lavalink
+      - name: Verify Lavalink loads the loudness plugin
+        run: |
+          docker run -d --name lavalink-loudness-test -p 127.0.0.1:2333:2333 \
+            -e LAVALINK_SERVER_PASSWORD=ci-loudness lavalink-loudness-test
+          trap 'docker logs lavalink-loudness-test; docker rm -f lavalink-loudness-test' EXIT
+          curl --silent --show-error --fail --retry 30 --retry-delay 2 --retry-connrefused \
+            -H 'Authorization: ci-loudness' http://127.0.0.1:2333/v4/info |
+            jq -e '.plugins | any(.name == "obskyra-loudness")'
       - run: python3 -m unittest discover -s tests -p 'test_*.py'
       - run: bash scripts/build-installer.sh && bash -n dist/install.sh

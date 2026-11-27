@@ -27,8 +27,19 @@ function interaction({ guildId = 'test', userId = 'owner', ownerId = 'owner', st
     client: {
       music: {
         get: () => queue,
-        shoukaku: { getIdealNode: () => ({ info: { plugins: [{ name: 'obskyra-loudness' }] } }) },
+        shoukaku: {
+          getIdealNode: () => ({
+            info: null,
+            rest: { getLavalinkInfo: async () => ({ plugins: [{ name: 'obskyra-loudness' }] }) },
+          }),
+        },
       },
+    },
+    deferReply: async (value) => {
+      reply = value;
+    },
+    editReply: async (content) => {
+      reply = { ...reply, content };
     },
     reply: async (value) => {
       reply = value;
@@ -99,7 +110,7 @@ test('Lavalink filter errors do not save a setting or pretend the change succeed
 
 test('missing loudness plugin cannot silently enable the setting', async () => {
   const i = interaction({ guildId: 'no-plugin', queue: null });
-  i.client.music.shoukaku.getIdealNode = () => ({ info: { plugins: [] } });
+  i.client.music.shoukaku.getIdealNode = () => ({ rest: { getLavalinkInfo: async () => ({ plugins: [] }) } });
   await command.execute(i);
   assert.equal(getSettings('no-plugin').music.normalization, false);
   assert.match(i.response().content, /not loaded/);

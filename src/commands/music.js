@@ -310,18 +310,25 @@ const musicSettingsCommand = {
     if (!i.guild || i.user.id !== i.guild.ownerId)
       return i.reply(eph('Only the actual server owner can change music normalization.'));
 
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
     const enabled = i.options.getString('state', true) === 'on';
     const { getSettings, updateSettings } = require('../lib/db');
     const wasEnabled = getSettings(i.guildId).music?.normalization === true;
-    // Never pretend that an unknown Lavalink node can provide loudness leveling.
-    const node = i.client.music.shoukaku?.getIdealNode?.();
-    if (enabled && !node?.info?.plugins?.some((p) => p.name === 'obskyra-loudness'))
-      return i.reply(
-        eph(
-          'Loudness normalization is unavailable: Lavalink is disconnected or the loudness plugin is not loaded. Run the latest install.sh to update Lavalink. No setting was changed.',
-        ),
-      );
     const q = i.client.music.get(i.guildId);
+    if (enabled) {
+      const node = q?.player?.node ?? i.client.music.shoukaku?.getIdealNode?.();
+      if (!node) return i.editReply('Lavalink is disconnected. Try enabling normalization once it reconnects.');
+      let info;
+      try {
+        info = await node.rest.getLavalinkInfo();
+      } catch (error) {
+        console.error('[music] unable to check Lavalink plugins:', error.message);
+        return i.editReply('Could not check Lavalink’s plugins. Try again or run /diagnostics.');
+      }
+      if (!info?.plugins?.some((plugin) => plugin.name === 'obskyra-loudness')) {
+        return i.editReply('Lavalink is connected, but the loudness plugin is not loaded. Run /diagnostics to confirm.');
+      }
+    }
 
     // Retry applying when a saved enabled setting did not take because Lavalink was missing the loudness plugin.
     if (q && q.normalizationEnabled !== enabled) {
@@ -329,20 +336,14 @@ const musicSettingsCommand = {
         await q.setNormalization(enabled);
       } catch (err) {
         console.error('[music] unable to change normalization:', err.message);
-        return i.reply(
-          eph(
-            'Could not apply normalization. Check the Lavalink logs and reinstall the loudness plugin. No setting was changed.',
-          ),
-        );
+        return i.editReply('Could not apply normalization. Check the Lavalink logs. No setting was changed.');
       }
     }
     if (wasEnabled !== enabled) updateSettings(i.guildId, { music: { normalization: enabled } });
-    return i.reply(
-      eph(
-        enabled
-          ? 'Music loudness normalization is **on** for this server. Quiet and loud songs are automatically levelled toward a common volume; no voice detection is used.'
-          : 'Music loudness normalization is **off** for this server. Songs play at their original relative loudness.',
-      ),
+    return i.editReply(
+      enabled
+        ? 'Music loudness normalization is **on** for this server. Quiet and loud songs are automatically levelled toward a common volume; no voice detection is used.'
+        : 'Music loudness normalization is **off** for this server. Songs play at their original relative loudness.',
     );
   },
 };
