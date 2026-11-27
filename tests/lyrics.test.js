@@ -171,6 +171,44 @@ test('the panel shows the line being sung and has a Lyrics button; a failed look
   await failing.destroy();
 });
 
+test('the shared panel skips overlapping edits and catches up to the latest playback position', async () => {
+  const q = queueWith(async () => ({ synced: lyrics.parseLrc(LRC) }));
+  q.add([song('a')]);
+  await q.start();
+  await q.loadLyrics(q.current);
+  const descriptions = [];
+  let finishEdit;
+  q.panelMsg = {
+    edit: ({ embeds }) => {
+      descriptions.push(embeds[0].toJSON().description);
+      return new Promise((resolve) => {
+        finishEdit = resolve;
+      });
+    },
+  };
+  q.clock = { base: 1_100, at: Date.now() };
+  const first = q.refreshPanel();
+  q.clock = { base: 10_500, at: Date.now() };
+  assert.equal(q.refreshPanel(), first);
+  assert.equal(descriptions.length, 1);
+  finishEdit();
+  await first;
+
+  const latest = q.refreshPanel();
+  assert.match(descriptions[1], /0:10/);
+  assert.match(descriptions[1], /Second/);
+  finishEdit();
+  await latest;
+  q.player.paused = true;
+  assert.ok(q.refreshPanel(), 'pausing changes the panel');
+  finishEdit();
+  await q.panelUpdate.pending;
+  assert.equal(q.refreshPanel(), undefined, 'an unchanged paused panel needs no edit');
+
+  q.panelMsg = null;
+  await q.destroy();
+});
+
 test('the private view highlights the current line among more lines, or offers a web search', () => {
   const q = { sessionId: 's', position: () => 10_500 };
   const track = song('c');
@@ -216,15 +254,15 @@ test('/lyrics replies privately, follows the song, and stops when the music stop
     assert.equal(deferred.flags, MessageFlags.Ephemeral);
     assert.match(edits[0].embeds[0].toJSON().description, /\*\*▶ First line\*\*/);
     const flush = () => new Promise((r) => setImmediate(r));
-    mock.timers.tick(4_000);
+    mock.timers.tick(1_000);
     await flush();
     assert.equal(edits.length, 1, 'same line: nothing re-sent');
     pos = 6_000;
-    mock.timers.tick(4_000);
+    mock.timers.tick(1_000);
     await flush();
     assert.match(edits[1].embeds[0].toJSON().description, /\*\*▶ Chorus\*\*/);
     queues.delete('g');
-    mock.timers.tick(4_000);
+    mock.timers.tick(1_000);
     await flush();
     assert.match(edits[2].content, /music stopped/);
     assert.equal(music._liveLyrics.size, 0);
