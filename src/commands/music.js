@@ -326,7 +326,7 @@ const musicSettingsCommand = {
         return i.editReply('Could not check Lavalink’s plugins. Try again or run /diagnostics.');
       }
       if (!info?.plugins?.some((plugin) => plugin.name === 'obskyra-loudness')) {
-        return i.editReply('Lavalink is connected, but the loudness plugin is not loaded. Run /diagnostics to confirm.');
+        return i.editReply('The Lavalink loudness plugin is not loaded. Run /diagnostics for details.');
       }
     }
 
