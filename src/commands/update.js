@@ -31,7 +31,9 @@ const command = {
       const music = i.client.music.queues.size > 0;
       const features = await bridge.hostFeatures();
       if (latest.deployment === 2 && !features.includes('full-stack'))
-        return i.editReply(`${message}\nRun the latest install.sh once to upgrade the VPS update worker.`);
+        return i.editReply(
+          `${message}\nThis VPS update worker is too old to update Lavalink. Run the latest install.sh once to upgrade it. Future releases can then be installed with /update in Discord.`,
+        );
       if (music && !features.includes('song-gap'))
         return i.editReply(
           `${message}\nEnd the music session with /stop, then run /update again. (Rerun install.sh on the VPS once so updates can wait for the gap between songs instead.)`,

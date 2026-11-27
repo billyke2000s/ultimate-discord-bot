@@ -141,7 +141,7 @@ jobs:
           pathlib.Path('dist/update.json').write_text(json.dumps(manifest))
           PY
           # Notes go through a file, never the shell, since PR titles can contain any characters.
-          python3 -c 'import json,os; notes=json.loads(os.environ.get("NOTES_JSON") or "[]"); open("dist/notes.md","w").write(("## What'"'"'s new\n" + "".join("- %s\n" % n for n in notes) + "\n" if notes else "") + "Download **install.sh**, upload it to /root on your VPS and run: `bash install.sh`. Already installed? Use `/update` in Discord.\n")'
+          python3 -c 'import json,os; notes=json.loads(os.environ.get("NOTES_JSON") or "[]"); open("dist/notes.md","w").write(("## What'"'"'s new\n" + "".join("- %s\n" % n for n in notes) + "\n" if notes else "") + "**Already installed?** Run `/update` in Discord as the server owner. It updates the bot and Lavalink together.\n\n**First install or older update worker?** Use the attached `install.sh` for a fresh setup or if `/update` explicitly asks you to upgrade the VPS update worker.\n")'
           gh release create "$tag" dist/install.sh dist/update.json \
             --title "$tag" \
             --notes-file dist/notes.md \
