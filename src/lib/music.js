@@ -17,7 +17,7 @@ const SAVE_POSITION_MS = 30_000; // and the song position at least every 30 s wh
 const RESUME_MAX_AGE_MS = 30 * 60_000; // don't resume a session saved more than 30 minutes ago
 const IDLE_LEAVE_MS = 2 * 60 * 1000; // leave after 2 min with empty queue or empty channel
 const MAX_QUEUE = 2000; // playback capacity, independent of the visible queue preview
-const PANEL_REFRESH_MS = 5_000; // how often the panel's time + progress bar update (1 edit / 5 s)
+const PANEL_REFRESH_MS = 1_000;
 const VOL_MIN = 10,
   VOL_MAX = 100;
 const BRAND_COLOR = 0x5865f2;
@@ -41,6 +41,17 @@ const LINK_HOSTS = [
   'vimeo.com',
   'bandcamp.com',
 ];
+function voiceListeners(guild, channelId) {
+  const listeners = new Map();
+  if (!channelId) return listeners;
+  for (const state of guild?.voiceStates.cache.values() ?? []) {
+    if (state.channelId === channelId && state.member?.user.bot !== true) {
+      listeners.set(state.id, state.member);
+    }
+  }
+  return listeners;
+}
+
 function isSupportedLink(query) {
   let url;
   try {
@@ -203,6 +214,7 @@ class GuildQueue {
     this.panelMsg = null;
     this.panelTimer = null;
     this.panelGeneration = 0;
+    this.panelUpdate = null;
     // Our own song clock. Lavalink only reports the position every 5 s, so between reports we
     // count forward from the last one (and stop counting while paused).
     this.clock = { base: 0, at: Date.now() };
@@ -296,10 +308,10 @@ class GuildQueue {
   }
 
   // The synced line being sung right now, or null.
-  currentLyric() {
+  currentLyric(position = this.position()) {
     const lines = this.current?.lyrics?.synced;
     if (!lines) return null;
-    const i = lyrics.indexAt(lines, this.position());
+    const i = lyrics.indexAt(lines, position);
     return i < 0 ? '♪' : lines[i].text || '♪';
   }
 
@@ -317,8 +329,7 @@ class GuildQueue {
 
   // Humans in the bot's voice channel (the bot and other bots don't count).
   listeners() {
-    const ch = this.guild?.channels.cache.get(this.voiceChannelId);
-    return ch ? ch.members.filter((m) => !m.user.bot) : new Map();
+    return voiceListeners(this.guild, this.voiceChannelId);
   }
 
   send(e) {
@@ -390,8 +401,9 @@ class GuildQueue {
       return { embeds: [embed(BRAND_COLOR).setAuthor(brand).setDescription(text)], components: [] };
     }
 
+    const position = this.position();
     const len = t.info.length,
-      pos = Math.max(0, Math.min(this.position(), len || 0));
+      pos = Math.max(0, Math.min(position, len || 0));
     const time = t.info.isStream
       ? '🔴 LIVE'
       : `\`${fmtDuration(pos)}\` ${progressBar(pos, len)} \`${fmtDuration(len)}\``;
@@ -405,7 +417,7 @@ class GuildQueue {
       previous = this.voteStatus('previous'),
       shuffle = this.voteStatus('shuffle');
     const paused = this.player.paused;
-    const lyric = this.currentLyric();
+    const lyric = this.currentLyric(position);
     // Spotify songs: show which YouTube upload is really playing, so a wrong match is easy to spot.
     const pf = t.playedFrom,
       pfUrl = safeUrl(pf?.uri);
@@ -467,9 +479,10 @@ class GuildQueue {
     if (this.destroyed || !this.textChannel) return;
     const generation = ++this.panelGeneration;
     const old = this.panelMsg;
-    let payload;
+    let payload, snapshot;
     try {
       payload = this.panelPayload();
+      snapshot = JSON.stringify(payload);
     } catch (e) {
       return console.error('[music panel]', e.message);
     }
@@ -487,29 +500,50 @@ class GuildQueue {
       return;
     }
     this.panelMsg = message;
+    this.panelUpdate = message ? { payload: snapshot, pending: null } : null;
     if (old) old.delete().catch(() => {});
     clearInterval(this.panelTimer);
-    this.panelTimer = setInterval(() => this.refreshPanel(), PANEL_REFRESH_MS);
+    this.panelTimer = message ? setInterval(() => this.refreshPanel(), PANEL_REFRESH_MS) : null;
   }
 
-  refreshPanel(state) {
-    if (!this.panelMsg) return;
-    let payload;
+  refreshPanel() {
+    const message = this.panelMsg;
+    if (!message) return;
+    const update = (this.panelUpdate ??= { payload: null, pending: null });
+    if (update.pending) return update.pending;
     try {
-      payload = this.panelPayload(state);
+      const payload = this.panelPayload();
+      const snapshot = JSON.stringify(payload);
+      if (snapshot === update.payload) return;
+      update.pending = message
+        .edit(payload)
+        .then(() => {
+          update.payload = snapshot;
+        })
+        .catch(() => {})
+        .finally(() => {
+          update.pending = null;
+        });
+      return update.pending;
     } catch (e) {
-      return console.error('[music panel]', e.message);
+      console.error('[music panel]', e.message);
     }
-    return this.panelMsg.edit(payload).catch(() => {});
   }
 
-  endPanel(state) {
+  async endPanel(state) {
     this.panelGeneration++;
     clearInterval(this.panelTimer);
     this.panelTimer = null;
-    const p = this.refreshPanel(state);
+    const message = this.panelMsg;
+    const pending = this.panelUpdate?.pending;
     this.panelMsg = null;
-    return p;
+    this.panelUpdate = null;
+    if (!message) return;
+    try {
+      const payload = this.panelPayload(state);
+      await pending;
+      await message.edit(payload);
+    } catch {}
   }
 
   // ---------- queue control ----------
@@ -1237,9 +1271,10 @@ class MusicManager {
       this.store.remove(guildId);
       return false;
     };
-    if (!guild || data?.v !== 1 || Date.now() - updatedAt > RESUME_MAX_AGE_MS) return forget();
+    if (data?.v !== 1 || Date.now() - updatedAt > RESUME_MAX_AGE_MS) return forget();
+    if (!guild?.available) return false;
     const vc = guild.channels.cache.get(data.voiceChannelId);
-    if (!vc || !vc.members?.some((m) => !m.user.bot)) return forget();
+    if (!vc || !voiceListeners(guild, vc.id).size) return forget();
     const tracks = [data.current, ...(data.tracks || [])].filter((t) => t?.info?.title);
     if (!tracks.length) return forget();
     if (data.current && tracks[0] === data.current && position > 0) tracks[0].resumeAt = position;

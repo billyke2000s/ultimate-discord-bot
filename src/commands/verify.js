@@ -203,31 +203,47 @@ async function sendWelcome(member, s) {
 }
 
 // Kick people who never verified. Runs every minute from index.js.
-async function sweepUnverified(client) {
-  const rows = db.prepare('SELECT * FROM pending_verify').all();
-  for (const row of rows) {
-    const guild = client.guilds.cache.get(row.guild_id);
-    if (!guild) {
-      db.prepare('DELETE FROM pending_verify WHERE guild_id = ?').run(row.guild_id);
-      continue;
-    }
-    const s = getSettings(guild.id);
-    if (!s.verify.enabled || !s.verify.timeoutMinutes) continue;
-    if (Date.now() - row.joined_at < s.verify.timeoutMinutes * 60_000) continue;
+let sweeping = false;
 
-    db.prepare('DELETE FROM pending_verify WHERE guild_id = ? AND user_id = ?').run(row.guild_id, row.user_id);
-    const member = await guild.members.fetch(row.user_id).catch(() => null);
-    if (!member || member.roles.cache.has(s.verify.memberRole)) continue;
-    await member
-      .send(
-        `You were removed from **${guild.name}** because you didn't verify within ${s.verify.timeoutMinutes} minutes. You can rejoin and try again.`,
-      )
-      .catch(() => {});
-    await member.kick('Did not verify in time').catch(() => {});
-    await log(
-      guild,
-      embed('grey').setDescription(`👢 ${member.user.tag} kicked: did not verify in ${s.verify.timeoutMinutes} min.`),
-    );
+async function sweepUnverified(client) {
+  if (sweeping) return;
+  sweeping = true;
+  try {
+    const getPending = db.prepare('SELECT joined_at FROM pending_verify WHERE guild_id = ? AND user_id = ?');
+    const removePending = db.prepare('DELETE FROM pending_verify WHERE guild_id=? AND user_id=? AND joined_at=?');
+    for (const row of db.prepare('SELECT * FROM pending_verify').all()) {
+      const guild = client.guilds.cache.get(row.guild_id);
+      if (!guild?.available) continue;
+      const s = getSettings(guild.id);
+      if (!s.verify.enabled || !s.verify.timeoutMinutes || !s.verify.memberRole) continue;
+      if (Date.now() - row.joined_at < s.verify.timeoutMinutes * 60_000) continue;
+
+      const key = [row.guild_id, row.user_id];
+      try {
+        const member = await guild.members.fetch({ user: row.user_id, force: true });
+        if (getPending.get(...key)?.joined_at !== row.joined_at) continue;
+        if (!member.roles.cache.has(s.verify.memberRole)) {
+          await member.kick('Did not verify in time');
+          await member
+            .send(
+              `You were removed from **${guild.name}** because you didn't verify within ${s.verify.timeoutMinutes} minutes. You can rejoin and try again.`,
+            )
+            .catch(() => {});
+          await log(
+            guild,
+            embed('grey').setDescription(
+              `👢 ${member.user.tag} kicked after ${s.verify.timeoutMinutes} min without verification.`,
+            ),
+          );
+        }
+        removePending.run(...key, row.joined_at);
+      } catch (error) {
+        if (error.code === 10007) removePending.run(...key, row.joined_at);
+        else console.error('[verify sweep] could not remove unverified member:', error.message);
+      }
+    }
+  } finally {
+    sweeping = false;
   }
 }
 

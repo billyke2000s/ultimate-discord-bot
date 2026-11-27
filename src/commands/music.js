@@ -162,7 +162,7 @@ async function queuePage(i, suffix) {
 
 // --- lyrics (private, follows the song) ------------------------------------
 const LYRICS_LIVE_MS = 14 * 60_000; // Discord lets the bot edit a private reply for 15 minutes
-const LYRICS_EVERY_MS = 4_000;
+const LYRICS_EVERY_MS = 1_000;
 const LYRICS_LINES = 15; // lines shown at once
 const LYRICS_BEFORE = 3; // of which this many already sung
 const LYRICS_MAX_LIVE = 25; // live views at once across the bot; more get a still view
@@ -268,6 +268,7 @@ async function openLyrics(i) {
       if (q.current !== track) {
         track = q.current;
         found = await q.lyricsFor(track);
+        if (q.current !== track || liveLyrics.get(id) !== stop) return;
       }
       const ended = Date.now() - started >= LYRICS_LIVE_MS;
       view = lyricsView(q, track, found, { ended });

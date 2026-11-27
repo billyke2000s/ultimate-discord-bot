@@ -203,8 +203,10 @@ async function backup(guild, progress) {
     let before;
     for (let n = 0; n < 20; n++) {
       // up to 2000 messages per channel
-      const batch = await ch.messages.fetch({ limit: 100, before }).catch(() => null);
-      if (!batch?.size) break;
+      const batch = await ch.messages.fetch({ limit: 100, before }).catch((error) => {
+        throw new Error(`Could not back up messages in #${ch.name} (${ch.id}): ${error.message}`, { cause: error });
+      });
+      if (!batch.size) break;
       all.push(...batch.values());
       before = batch.last().id;
       if (batch.size < 100) break; // reached the start of the channel
@@ -220,7 +222,7 @@ async function backup(guild, progress) {
       )
       .join('\n');
     const cat = ch.parent ? ch.parent.name.replace(/[^\w-]+/g, '_') + '/' : '';
-    files[`channels/${cat}${ch.name.replace(/[^\w-]+/g, '_')}.txt`] = strToU8(text);
+    files[`channels/${cat}${ch.name.replace(/[^\w-]+/g, '_')}-${ch.id}.txt`] = strToU8(text);
   }
 
   const members = await guild.members.fetch();
